@@ -11,6 +11,8 @@ from ui import UI
 from ai import AIManager
 from events import EventSystem
 from military import MilitarySystem
+from military import UnitType
+
 
 # Constants
 SCREEN_WIDTH = 1280

@@ -60,52 +60,233 @@ class GameState:
 
     def _generate_initial_world(self):
         """Generate the initial game world with nations, provinces, etc."""
+        print("Generating initial game world...")
+
         # Create dynasties
         for i in range(len(NATION_NAMES)):
             dynasty_name = f"House of {NATION_NAMES[i]}"
             dynasty = Dynasty(i, dynasty_name)
+            dynasty.set_founder(i, self.year)  # Set founder with current year
             self.dynasties[i] = dynasty
 
             # Create ruler character
             ruler_first_name = f"Ruler{i}"
             ruler = Character(i, ruler_first_name, dynasty_name, 30 + random.randint(-10, 10),
-                             random.randint(3, 8), random.randint(3, 8), random.randint(3, 8),
-                             random.randint(3, 8), random.randint(3, 8))
+                              random.randint(3, 8), random.randint(3, 8), random.randint(3, 8),
+                              random.randint(3, 8), random.randint(3, 8))
             self.characters[i] = ruler
+            dynasty.add_member(ruler.id)
+
+            # Create spouse for ruler (50% chance)
+            if random.random() < 0.5:
+                spouse_id = len(self.characters)
+                spouse_gender = "female" if ruler.gender == "male" else "male"
+                spouse = Character(spouse_id, f"Spouse{i}", dynasty_name,
+                                   25 + random.randint(-5, 5),
+                                   random.randint(3, 8), random.randint(3, 8), random.randint(3, 8),
+                                   random.randint(3, 8), random.randint(3, 8))
+                spouse.gender = spouse_gender
+                self.characters[spouse_id] = spouse
+                dynasty.add_member(spouse_id)
+
+                # Create marriage connection
+                ruler.marry(spouse_id)
+                spouse.marry(ruler.id)
+
+                # Create children (0-3)
+                num_children = random.randint(0, 3)
+                for j in range(num_children):
+                    child_id = len(self.characters)
+                    child_gender = random.choice(["male", "female"])
+                    child_age = random.randint(1, 15)
+                    child = Character(child_id, f"Child{i}_{j}", dynasty_name,
+                                      child_age,
+                                      random.randint(1, 6), random.randint(1, 6),
+                                      random.randint(1, 6), random.randint(1, 6),
+                                      random.randint(1, 6))
+                    child.gender = child_gender
+                    child.set_parents(ruler.id, spouse_id)
+                    self.characters[child_id] = child
+
+                    # Add child to parents
+                    ruler.add_child(child_id)
+                    spouse.add_child(child_id)
+                    dynasty.add_member(child_id)
 
             # Create nation
             nation = Nation(i, NATION_NAMES[i], NATION_COLORS[i], ruler.id, dynasty.id)
+            nation.game_state = self  # Pass reference to game_state
             self.nations[i] = nation
 
-        # Assign provinces to nations (simple assignment for now)
-        provinces = self.map.provinces
-
-        # Assign adjacent provinces to each nation to create contiguous territories
+        # Assign provinces to nations (contiguous territories)
+        print("Assigning provinces to nations...")
+        provinces = list(self.map.provinces.values())
         nation_count = len(self.nations)
+
+        # Sort provinces by position for better contiguity
+        provinces.sort(key=lambda p: (p.capital_hex.q, p.capital_hex.r) if p.capital_hex else (0, 0))
+
+        # Calculate provinces per nation for roughly equal distribution
         provinces_per_nation = len(provinces) // nation_count
 
+        # Assign starting province for each nation
         for i, nation_id in enumerate(self.nations.keys()):
-            start_idx = i * provinces_per_nation
-            end_idx = start_idx + provinces_per_nation
-            if i == nation_count - 1:  # Last nation gets any remaining provinces
-                end_idx = len(provinces)
+            # Get center of gravity for this nation's territory
+            center_q = (self.map.width * (i + 0.5)) // nation_count
+            center_r = self.map.height // 2
 
-            for j in range(start_idx, end_idx):
-                province_id = list(provinces.keys())[j]
-                provinces[province_id].nation_id = nation_id
-                self.nations[nation_id].add_province(province_id)
+            # Find closest unassigned province to this center
+            closest_province = None
+            min_distance = float('inf')
 
-            # Set capital to the first province assigned
-            capital_id = list(provinces.keys())[start_idx]
-            self.nations[nation_id].set_capital(capital_id)
-            provinces[capital_id].is_capital = True
+            for province in provinces:
+                if province.nation_id is not None:
+                    continue  # Skip already assigned provinces
+
+                if province.capital_hex:
+                    distance = ((province.capital_hex.q - center_q) ** 2 +
+                                (province.capital_hex.r - center_r) ** 2) ** 0.5
+                    if distance < min_distance:
+                        min_distance = distance
+                        closest_province = province
+
+            if closest_province:
+                # Assign the province
+                closest_province.nation_id = nation_id
+                self.nations[nation_id].add_province(closest_province.id)
+
+                # Set as capital
+                self.nations[nation_id].set_capital(closest_province.id)
+                closest_province.is_capital = True
+
+        # Expand territories from starting provinces
+        for expansion_round in range(provinces_per_nation - 1):
+            for nation_id in self.nations.keys():
+                # Get frontier provinces (provinces that have unassigned neighbors)
+                frontier = []
+
+                for province_id in self.nations[nation_id].provinces:
+                    province = self.map.provinces[province_id]
+
+                    # Get neighboring provinces
+                    for hex_tile in province.hexes:
+                        for neighbor in self.map._get_neighbor_hexes(hex_tile):
+                            neighbor_province = self.map.get_province_for_hex((neighbor.q, neighbor.r))
+
+                            if (neighbor_province and neighbor_province.id != province_id and
+                                    neighbor_province.nation_id is None and
+                                    neighbor_province.id not in frontier):
+                                frontier.append(neighbor_province.id)
+
+                # Claim a random frontier province if available
+                if frontier:
+                    new_province_id = random.choice(frontier)
+                    new_province = self.map.provinces[new_province_id]
+                    new_province.nation_id = nation_id
+                    self.nations[nation_id].add_province(new_province_id)
 
         # Initialize diplomatic relations between nations
+        print("Initializing diplomatic relations...")
         for nation_id, nation in self.nations.items():
             nation.init_relations([n_id for n_id in self.nations.keys() if n_id != nation_id])
 
+            # Add some initial diplomatic variation
+            for other_id, other_nation in self.nations.items():
+                if other_id == nation_id:
+                    continue
+
+                # 20% chance of improved relations
+                if random.random() < 0.2:
+                    improvement = random.randint(10, 30)
+                    if other_id in nation.relations:
+                        nation.relations[other_id].improve_relations(improvement)
+
+                # 20% chance of worsened relations
+                elif random.random() < 0.2:
+                    worsening = random.randint(10, 30)
+                    if other_id in nation.relations:
+                        nation.relations[other_id].worsen_relations(worsening)
+
+                # 10% chance of alliance with good relations
+                if (other_id in nation.relations and
+                        nation.relations[other_id].opinion > 30 and
+                        random.random() < 0.1):
+                    nation.form_alliance(other_id)
+
+                # 10% chance of royal marriage with decent relations
+                if (other_id in nation.relations and
+                        nation.relations[other_id].opinion > 0 and
+                        random.random() < 0.1):
+                    nation.royal_marriage(other_id)
+
         # Set up economy and trade
-        self.economy.assign_provinces_to_trade_nodes(provinces)
+        print("Initializing economy and trade...")
+        self.economy.assign_provinces_to_trade_nodes(self.map.provinces)
+
+        # Create initial military units for each nation
+        print("Creating initial military forces...")
+        for nation_id, nation in self.nations.items():
+            # Get capital for initial army placement
+            if nation.capital_id is not None:
+                # Create initial army at capital
+                army_id = self.military_system.create_army(
+                    nation_id,
+                    f"{nation.name} Army",
+                    nation.capital_id
+                )
+
+                # Add units based on nation's starting power
+                base_units = 3 + random.randint(0, 3)
+                player_bonus = 2 if nation_id == self.player_nation_id else 0
+
+                # Add infantry
+                self.military_system.armies[army_id].add_units("infantry", base_units + player_bonus)
+
+                # Add cavalry if rich enough
+                if nation.treasury >= 50:
+                    self.military_system.armies[army_id].add_units("cavalry", 1)
+                    nation.treasury -= 25
+
+                # Create a navy for nations with coastal provinces
+                has_coast = False
+                for province_id in nation.provinces:
+                    province = self.map.provinces.get(province_id)
+                    if province:
+                        for hex_tile in province.hexes:
+                            if hex_tile.terrain_type == "ocean":
+                                has_coast = True
+                                # Create navy
+                                navy_id = self.military_system.create_navy(
+                                    nation_id,
+                                    f"{nation.name} Navy",
+                                    province_id
+                                )
+                                # Add ships
+                                self.military_system.navies[navy_id].add_units("ships_light", 2)
+                                break
+                    if has_coast:
+                        break
+
+                # Update nation's army/navy size for accounting
+                nation.army_size = base_units + player_bonus + (1 if nation.treasury >= 50 else 0)
+                nation.navy_size = 2 if has_coast else 0
+
+        # Set initial manpower based on provinces and development
+        for nation_id, nation in self.nations.items():
+            total_manpower = 0
+            for province_id in nation.provinces:
+                province = self.map.provinces.get(province_id)
+                if province:
+                    total_manpower += province.get_manpower()
+
+            # Set initial manpower (scale appropriately)
+            nation.manpower = int(total_manpower * 10)
+
+            # Give player bonus manpower
+            if nation_id == self.player_nation_id:
+                nation.manpower = int(nation.manpower * 1.5)
+
+        print("World generation complete!")
 
     def update(self):
         """Update game state (called once per frame)"""

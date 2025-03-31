@@ -2,6 +2,8 @@
 Nation management module
 """
 import random
+from military import UnitType
+
 
 
 class Relation:
@@ -85,6 +87,7 @@ class Nation:
         self.color = color
         self.ruler_id = ruler_id
         self.dynasty_id = dynasty_id
+        self.game_state = None  # Will be set by GameState
         self.provinces = []  # List of province IDs
         self.capital_id = None
 
@@ -266,17 +269,47 @@ class Nation:
                 change = random.uniform(-5, 5)
                 self.legitimacy = max(0, min(100, self.legitimacy + change))
 
-    def recruit_troops(self, amount):
+    def recruit_troops(self, amount, unit_type="infantry"):
         """Recruit new troops"""
-        cost = amount * 10
-        manpower_needed = amount
+        # Get unit stats for cost calculation
+        unit_stats = UnitType.get_unit_stats(unit_type)
+        if not unit_stats:
+            return False
+
+        cost = unit_stats["cost"] * amount
+        manpower_needed = unit_stats["manpower"] * amount // 1000  # Scale manpower needed
 
         if self.can_afford(cost) and self.manpower >= manpower_needed:
             self.spend(cost)
             self.manpower -= manpower_needed
             self.army_size += amount
-            return True
 
+            # Get reference to military system from game state
+            if hasattr(self.game_state, "military_system"):
+                # Find existing army at capital or create new one
+                capital_id = self.capital_id
+
+                # Find existing army at capital
+                existing_army = None
+                for army_id, army in self.game_state.military_system.armies.items():
+                    if army.nation_id == self.id and army.location == capital_id:
+                        existing_army = army
+                        break
+
+                if existing_army:
+                    # Add units to existing army
+                    existing_army.add_units(unit_type, amount)
+                else:
+                    # Create new army at capital
+                    army_id = self.game_state.military_system.create_army(
+                        self.id,
+                        f"{self.name} Army",
+                        capital_id
+                    )
+                    # Add units to the new army
+                    self.game_state.military_system.armies[army_id].add_units(unit_type, amount)
+
+            return True
         return False
 
     def can_invest_in_tech(self, tech_type):

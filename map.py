@@ -6,6 +6,8 @@ import math
 import numpy as np
 import pygame
 import networkx as nx
+from military import UnitType
+
 
 # Constants for hex grid
 HEX_SIZE = 30
@@ -297,7 +299,7 @@ class HexMap:
         for hex_tile in self.tiles.values():
             center_x, center_y = hex_tile.get_pixel_position(camera_offset_x, camera_offset_y)
 
-            # Skip hexes that are off-screen
+            # Skip hexes that are off-screen for efficiency
             if (center_x < -HEX_SIZE or center_x > surface.get_width() + HEX_SIZE or
                     center_y < -HEX_SIZE or center_y > surface.get_height() + HEX_SIZE):
                 continue
@@ -312,48 +314,191 @@ class HexMap:
                 resource_color = RESOURCE_TYPES[hex_tile.resource]["color"]
                 pygame.draw.circle(surface, resource_color, (int(center_x), int(center_y)), 5)
 
-            # Draw province borders
-            # This is a simplified approach - just check if neighboring hexes are in different provinces
-            for neighbor in self._get_neighbor_hexes(hex_tile):
-                hex_province = None
-                neighbor_province = None
+        # Draw province borders
+        for province in self.provinces.values():
+            for hex_tile in province.hexes:
+                center_x, center_y = hex_tile.get_pixel_position(camera_offset_x, camera_offset_y)
 
-                for province in self.provinces.values():
-                    if hex_tile in province.hexes:
-                        hex_province = province
-                    if neighbor in province.hexes:
-                        neighbor_province = province
+                # Skip if off-screen
+                if (center_x < -HEX_SIZE or center_x > surface.get_width() + HEX_SIZE or
+                        center_y < -HEX_SIZE or center_y > surface.get_height() + HEX_SIZE):
+                    continue
 
-                if hex_province != neighbor_province:
-                    # Draw a thicker line for the border
-                    hex_corners = hex_tile.get_corners(center_x, center_y)
-                    neighbor_center = neighbor.get_pixel_position(camera_offset_x, camera_offset_y)
-                    neighbor_corners = neighbor.get_corners(neighbor_center[0], neighbor_center[1])
+                for neighbor in self._get_neighbor_hexes(hex_tile):
+                    neighbor_province = self.get_province_for_hex((neighbor.q, neighbor.r))
 
-                    # Find shared edge (this is approximate)
-                    for i in range(6):
-                        for j in range(6):
-                            if (abs(hex_corners[i][0] - neighbor_corners[j][0]) < 2 and
-                                    abs(hex_corners[i][1] - neighbor_corners[j][1]) < 2):
-                                # Found a shared corner, draw line to next corner
-                                next_i = (i + 1) % 6
-                                next_j = (j + 1) % 6
-                                if (abs(hex_corners[next_i][0] - neighbor_corners[next_j][0]) < 2 and
-                                        abs(hex_corners[next_i][1] - neighbor_corners[next_j][1]) < 2):
-                                    pygame.draw.line(surface, (0, 0, 0), hex_corners[i], hex_corners[next_i], 3)
+                    if neighbor_province != province:
+                        # Draw a border between provinces
+                        hex_corners = hex_tile.get_corners(center_x, center_y)
+                        neighbor_center = neighbor.get_pixel_position(camera_offset_x, camera_offset_y)
+                        neighbor_corners = neighbor.get_corners(neighbor_center[0], neighbor_center[1])
 
-            # Draw capital marker if this hex is a province capital
-            for province in self.provinces.values():
-                if province.capital_hex == hex_tile:
-                    if province.is_capital:
-                        # Nation capital - larger star
-                        pygame.draw.circle(surface, (255, 215, 0), (int(center_x), int(center_y)), 8)
-                        pygame.draw.circle(surface, (0, 0, 0), (int(center_x), int(center_y)), 8, 1)
-                    else:
-                        # Province capital - small circle
-                        pygame.draw.circle(surface, (255, 255, 255), (int(center_x), int(center_y)), 5)
-                        pygame.draw.circle(surface, (0, 0, 0), (int(center_x), int(center_y)), 5, 1)
+                        # Find shared edge
+                        for i in range(6):
+                            for j in range(6):
+                                if (abs(hex_corners[i][0] - neighbor_corners[j][0]) < 2 and
+                                        abs(hex_corners[i][1] - neighbor_corners[j][1]) < 2):
+                                    # Found a shared corner, draw line to next corner
+                                    next_i = (i + 1) % 6
+                                    next_j = (j + 1) % 6
+                                    if (abs(hex_corners[next_i][0] - neighbor_corners[next_j][0]) < 2 and
+                                            abs(hex_corners[next_i][1] - neighbor_corners[next_j][1]) < 2):
+                                        # Draw nation borders thicker if provinces belong to different nations
+                                        border_width = 1
+                                        border_color = (0, 0, 0)
 
+                                        if (province.nation_id is not None and
+                                                neighbor_province is not None and
+                                                neighbor_province.nation_id is not None and
+                                                province.nation_id != neighbor_province.nation_id):
+                                            border_width = 3
+                                            border_color = (50, 50, 50)
+
+                                        pygame.draw.line(
+                                            surface,
+                                            border_color,
+                                            hex_corners[i],
+                                            hex_corners[next_i],
+                                            border_width
+                                        )
+
+        # Draw province capitals and nation capitals
+        for province in self.provinces.values():
+            if province.capital_hex:
+                center_x, center_y = province.capital_hex.get_pixel_position(camera_offset_x, camera_offset_y)
+
+                # Skip if off-screen
+                if (center_x < -10 or center_x > surface.get_width() + 10 or
+                        center_y < -10 or center_y > surface.get_height() + 10):
+                    continue
+
+                # Draw nation capital (star)
+                if province.is_capital:
+                    # Gold star for nation capital
+                    pygame.draw.circle(surface, (255, 215, 0), (int(center_x), int(center_y)), 8)
+                    pygame.draw.circle(surface, (0, 0, 0), (int(center_x), int(center_y)), 8, 1)
+                else:
+                    # White circle for province capital
+                    pygame.draw.circle(surface, (255, 255, 255), (int(center_x), int(center_y)), 5)
+                    pygame.draw.circle(surface, (0, 0, 0), (int(center_x), int(center_y)), 5, 1)
+
+        # Draw military units
+        game_state = None
+        for province in self.provinces.values():
+            if hasattr(province, 'nation_id') and province.nation_id is not None:
+                nation = None
+
+                # Find the game_state reference
+                if not game_state:
+                    # This is a bit of a hack, but we need to find the game_state somehow
+                    for nation_id, nation_obj in globals().get('game_state', {}).nations.items():
+                        if nation_id == province.nation_id:
+                            nation = nation_obj
+                            game_state = nation_obj.game_state
+                            break
+                else:
+                    nation = game_state.nations.get(province.nation_id)
+
+                if game_state and hasattr(game_state, 'military_system'):
+                    military_system = game_state.military_system
+
+                    # Find armies in this province
+                    for army_id, army in military_system.armies.items():
+                        if army.location == province.id:
+                            # Draw the army
+                            if province.capital_hex:
+                                center_x, center_y = province.capital_hex.get_pixel_position(
+                                    camera_offset_x, camera_offset_y
+                                )
+
+                                # Offset slightly from capital if needed
+                                center_x += 10
+                                center_y += 10
+
+                                # Get nation color
+                                army_color = (0, 0, 0)  # Default black
+                                if army.nation_id is not None and army.nation_id in game_state.nations:
+                                    army_color = game_state.nations[army.nation_id].color
+
+                                # Draw army with size indication
+                                army_size = sum(army.units.values())
+                                size_marker = min(max(4, army_size // 2), 12)  # Size between 4 and 12 pixels
+
+                                # Draw different symbols for different dominant unit types
+                                dominant_type = max(army.units.items(), key=lambda x: x[1])[
+                                    0] if army.units else "infantry"
+
+                                if dominant_type == "infantry":
+                                    # Square for infantry
+                                    pygame.draw.rect(
+                                        surface,
+                                        army_color,
+                                        (center_x - size_marker, center_y - size_marker,
+                                         size_marker * 2, size_marker * 2)
+                                    )
+                                    pygame.draw.rect(
+                                        surface,
+                                        (0, 0, 0),
+                                        (center_x - size_marker, center_y - size_marker,
+                                         size_marker * 2, size_marker * 2),
+                                        1
+                                    )
+                                elif dominant_type == "cavalry":
+                                    # Circle for cavalry
+                                    pygame.draw.circle(
+                                        surface,
+                                        army_color,
+                                        (int(center_x), int(center_y)),
+                                        size_marker
+                                    )
+                                    pygame.draw.circle(
+                                        surface,
+                                        (0, 0, 0),
+                                        (int(center_x), int(center_y)),
+                                        size_marker,
+                                        1
+                                    )
+                                elif dominant_type == "artillery":
+                                    # Triangle for artillery
+                                    points = [
+                                        (center_x, center_y - size_marker),
+                                        (center_x + size_marker, center_y + size_marker),
+                                        (center_x - size_marker, center_y + size_marker)
+                                    ]
+                                    pygame.draw.polygon(surface, army_color, points)
+                                    pygame.draw.polygon(surface, (0, 0, 0), points, 1)
+
+                    # Draw navies as well if we're on a water tile
+                    for navy_id, navy in military_system.navies.items():
+                        if navy.location == province.id:
+                            # Only draw on ocean tiles
+                            has_ocean = False
+                            for hex_tile in province.hexes:
+                                if hex_tile.terrain_type == "ocean":
+                                    has_ocean = True
+                                    center_x, center_y = hex_tile.get_pixel_position(
+                                        camera_offset_x, camera_offset_y
+                                    )
+
+                                    # Get nation color
+                                    navy_color = (0, 0, 128)  # Default navy blue
+                                    if navy.nation_id is not None and navy.nation_id in game_state.nations:
+                                        navy_color = game_state.nations[navy.nation_id].color
+
+                                    # Draw navy with size indication
+                                    navy_size = sum(navy.units.values())
+                                    size_marker = min(max(4, navy_size // 2), 10)
+
+                                    # Ship shape (simple boat)
+                                    ship_points = [
+                                        (center_x - size_marker, center_y),
+                                        (center_x, center_y - size_marker),
+                                        (center_x + size_marker, center_y),
+                                        (center_x, center_y + size_marker // 2)
+                                    ]
+                                    pygame.draw.polygon(surface, navy_color, ship_points)
+                                    pygame.draw.polygon(surface, (0, 0, 0), ship_points, 1)
+                                    break
     def get_province_for_hex(self, hex_coords):
         """Get the province containing a hex at the given coordinates"""
         if hex_coords not in self.tiles:

@@ -3,6 +3,8 @@ User interface module for MiniEmpire
 """
 import pygame
 import sys
+from military import UnitType
+
 
 
 class Button:
@@ -393,32 +395,115 @@ class UI:
 
         # Military recruitment
         if self.recruit_inf_button.check_click(mouse_pos, mouse_pressed):
+            # Get unit cost from UnitType class
+            unit_stats = UnitType.get_unit_stats("infantry")
+            cost = unit_stats["cost"]
+            self.recruit_inf_button.text = f"Infantry ({cost})"
+
             # Recruit 1 infantry unit
-            if player_nation.recruit_troops(1):
+            if player_nation.recruit_troops(1, "infantry"):
+                # Play recruitment sound if available
+                # self.sound_manager.play_sound("recruit")
                 self.update_nation_panel()
+                # Show feedback
+                self.status_message = "Infantry recruited"
+                self.status_timer = 120  # 2 seconds at 60 FPS
 
         elif self.recruit_cav_button.check_click(mouse_pos, mouse_pressed):
-            # Recruit 1 cavalry unit (costs more)
-            if player_nation.recruit_troops(1):
+            # Get unit cost from UnitType class
+            unit_stats = UnitType.get_unit_stats("cavalry")
+            cost = unit_stats["cost"]
+            self.recruit_cav_button.text = f"Cavalry ({cost})"
+
+            # Recruit 1 cavalry unit
+            if player_nation.recruit_troops(1, "cavalry"):
                 self.update_nation_panel()
+                self.status_message = "Cavalry recruited"
+                self.status_timer = 120
 
         elif self.recruit_art_button.check_click(mouse_pos, mouse_pressed):
-            # Recruit 1 artillery unit (costs even more)
-            if player_nation.recruit_troops(1):
+            # Get unit cost from UnitType class
+            unit_stats = UnitType.get_unit_stats("artillery")
+            cost = unit_stats["cost"]
+            self.recruit_art_button.text = f"Artillery ({cost})"
+
+            # Recruit 1 artillery unit
+            if player_nation.recruit_troops(1, "artillery"):
                 self.update_nation_panel()
+                self.status_message = "Artillery recruited"
+                self.status_timer = 120
+
+        # Ship recruitment (if implemented)
+        elif hasattr(self, 'recruit_light_ship_button') and self.recruit_light_ship_button.check_click(mouse_pos,
+                                                                                                       mouse_pressed):
+            if player_nation.recruit_ships(1, "ships_light"):
+                self.update_nation_panel()
+                self.status_message = "Light ship built"
+                self.status_timer = 120
+
+        elif hasattr(self, 'recruit_heavy_ship_button') and self.recruit_heavy_ship_button.check_click(mouse_pos,
+                                                                                                       mouse_pressed):
+            if player_nation.recruit_ships(1, "ships_heavy"):
+                self.update_nation_panel()
+                self.status_message = "Heavy ship built"
+                self.status_timer = 120
 
         # Technology buttons
         elif self.tech_adm_button.check_click(mouse_pos, mouse_pressed):
             if player_nation.invest_in_tech("administrative"):
                 self.update_nation_panel()
+                self.status_message = "Administrative technology improved"
+                self.status_timer = 120
 
         elif self.tech_dip_button.check_click(mouse_pos, mouse_pressed):
             if player_nation.invest_in_tech("diplomatic"):
                 self.update_nation_panel()
+                self.status_message = "Diplomatic technology improved"
+                self.status_timer = 120
 
         elif self.tech_mil_button.check_click(mouse_pos, mouse_pressed):
             if player_nation.invest_in_tech("military"):
                 self.update_nation_panel()
+                self.status_message = "Military technology improved"
+                self.status_timer = 120
+
+        # Update button states based on affordability
+        self.update_button_states()
+
+    def update_button_states(self):
+        """Update button states based on what the player can afford"""
+        player_nation = self.game_state.get_player_nation()
+
+        # Military recruitment buttons
+        infantry_stats = UnitType.get_unit_stats("infantry")
+        cavalry_stats = UnitType.get_unit_stats("cavalry")
+        artillery_stats = UnitType.get_unit_stats("artillery")
+
+        # Update button text with costs
+        self.recruit_inf_button.text = f"Infantry ({infantry_stats['cost']})"
+        self.recruit_cav_button.text = f"Cavalry ({cavalry_stats['cost']})"
+        self.recruit_art_button.text = f"Artillery ({artillery_stats['cost']})"
+
+        # Update button colors based on affordability
+        self.recruit_inf_button.color = (100, 100, 100) if player_nation.can_afford(infantry_stats['cost']) else (
+        70, 70, 70)
+        self.recruit_cav_button.color = (100, 100, 100) if player_nation.can_afford(cavalry_stats['cost']) else (
+        70, 70, 70)
+        self.recruit_art_button.color = (100, 100, 100) if player_nation.can_afford(artillery_stats['cost']) else (
+        70, 70, 70)
+
+        # Technology buttons
+        adm_cost = player_nation.tech_levels["administrative"] * 100
+        dip_cost = player_nation.tech_levels["diplomatic"] * 100
+        mil_cost = player_nation.tech_levels["military"] * 100
+
+        self.tech_adm_button.text = f"Admin ({adm_cost})"
+        self.tech_dip_button.text = f"Diplo ({dip_cost})"
+        self.tech_mil_button.text = f"Military ({mil_cost})"
+
+        self.tech_adm_button.color = (100, 100, 100) if player_nation.can_afford(adm_cost) else (70, 70, 70)
+        self.tech_dip_button.color = (100, 100, 100) if player_nation.can_afford(dip_cost) else (70, 70, 70)
+        self.tech_mil_button.color = (100, 100, 100) if player_nation.can_afford(mil_cost) else (70, 70, 70)
 
     def update(self):
         """Update UI elements"""
