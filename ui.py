@@ -625,7 +625,7 @@ class UI:
     def render(self):
         """Render all UI elements"""
         # Draw the map
-        self.game_state.map.draw(self.screen, self.camera_x, self.camera_y)
+        self.game_state.map.draw(self.screen, self.camera_x, self.camera_y, self.game_state)
 
         # Draw UI panels
         self.top_bar.draw(self.screen, self.font_medium)

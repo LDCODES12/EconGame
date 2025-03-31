@@ -37,11 +37,14 @@ class Game:
         self.military_system = MilitarySystem()
         self.event_system = EventSystem(self.game_state)
         self.ai_manager = AIManager(self.game_state)
-        self.ui = UI(self.screen, self.game_state, self.event_system)
 
         # Add systems to game state
         self.game_state.military_system = self.military_system
         self.game_state.event_system = self.event_system
+
+        self.game_state.initialize_world()
+
+        self.ui = UI(self.screen, self.game_state, self.event_system)
 
         print("MiniEmpire - A Simple Grand Strategy Game")
         print("Game initialized successfully. Starting year:", self.game_state.year)

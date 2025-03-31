@@ -293,7 +293,7 @@ class HexMap:
         # Calculate cubic distance
         return max(abs(a_q - b_q), abs(a_r - b_r), abs(a_s - b_s))
 
-    def draw(self, surface, camera_offset_x=0, camera_offset_y=0):
+    def draw(self, surface, camera_offset_x=0, camera_offset_y=0, game_state=None):
         """Draw the map on a pygame surface"""
         # Draw each hex tile
         for hex_tile in self.tiles.values():
@@ -382,123 +382,117 @@ class HexMap:
                     pygame.draw.circle(surface, (255, 255, 255), (int(center_x), int(center_y)), 5)
                     pygame.draw.circle(surface, (0, 0, 0), (int(center_x), int(center_y)), 5, 1)
 
-        # Draw military units
-        game_state = None
-        for province in self.provinces.values():
-            if hasattr(province, 'nation_id') and province.nation_id is not None:
-                nation = None
+        # Draw military units if game_state is provided
+        if game_state and hasattr(game_state, 'military_system'):
+            military_system = game_state.military_system
 
-                # Find the game_state reference
-                if not game_state:
-                    # This is a bit of a hack, but we need to find the game_state somehow
-                    for nation_id, nation_obj in globals().get('game_state', {}).nations.items():
-                        if nation_id == province.nation_id:
-                            nation = nation_obj
-                            game_state = nation_obj.game_state
-                            break
-                else:
-                    nation = game_state.nations.get(province.nation_id)
+            # Draw armies
+            for army_id, army in military_system.armies.items():
+                if army.location in self.provinces:
+                    province = self.provinces[army.location]
+                    if province.capital_hex:
+                        center_x, center_y = province.capital_hex.get_pixel_position(
+                            camera_offset_x, camera_offset_y
+                        )
 
-                if game_state and hasattr(game_state, 'military_system'):
-                    military_system = game_state.military_system
+                        # Skip if off-screen
+                        if (center_x < -10 or center_x > surface.get_width() + 10 or
+                                center_y < -10 or center_y > surface.get_height() + 10):
+                            continue
 
-                    # Find armies in this province
-                    for army_id, army in military_system.armies.items():
-                        if army.location == province.id:
-                            # Draw the army
-                            if province.capital_hex:
-                                center_x, center_y = province.capital_hex.get_pixel_position(
-                                    camera_offset_x, camera_offset_y
-                                )
+                        # Offset slightly from capital
+                        center_x += 10
+                        center_y += 10
 
-                                # Offset slightly from capital if needed
-                                center_x += 10
-                                center_y += 10
+                        # Get nation color
+                        army_color = (0, 0, 0)  # Default black
+                        if army.nation_id is not None and army.nation_id in game_state.nations:
+                            army_color = game_state.nations[army.nation_id].color
 
-                                # Get nation color
-                                army_color = (0, 0, 0)  # Default black
-                                if army.nation_id is not None and army.nation_id in game_state.nations:
-                                    army_color = game_state.nations[army.nation_id].color
+                        # Draw army with size indication
+                        army_size = sum(army.units.values())
+                        size_marker = min(max(4, army_size // 2), 12)  # Size between 4 and 12 pixels
 
-                                # Draw army with size indication
-                                army_size = sum(army.units.values())
-                                size_marker = min(max(4, army_size // 2), 12)  # Size between 4 and 12 pixels
+                        # Draw different symbols for different dominant unit types
+                        dominant_type = max(army.units.items(), key=lambda x: x[1])[0] if army.units else "infantry"
 
-                                # Draw different symbols for different dominant unit types
-                                dominant_type = max(army.units.items(), key=lambda x: x[1])[
-                                    0] if army.units else "infantry"
+                        if dominant_type == "infantry":
+                            # Square for infantry
+                            pygame.draw.rect(
+                                surface,
+                                army_color,
+                                (center_x - size_marker, center_y - size_marker,
+                                 size_marker * 2, size_marker * 2)
+                            )
+                            pygame.draw.rect(
+                                surface,
+                                (0, 0, 0),
+                                (center_x - size_marker, center_y - size_marker,
+                                 size_marker * 2, size_marker * 2),
+                                1
+                            )
+                        elif dominant_type == "cavalry":
+                            # Circle for cavalry
+                            pygame.draw.circle(
+                                surface,
+                                army_color,
+                                (int(center_x), int(center_y)),
+                                size_marker
+                            )
+                            pygame.draw.circle(
+                                surface,
+                                (0, 0, 0),
+                                (int(center_x), int(center_y)),
+                                size_marker,
+                                1
+                            )
+                        elif dominant_type == "artillery":
+                            # Triangle for artillery
+                            points = [
+                                (center_x, center_y - size_marker),
+                                (center_x + size_marker, center_y + size_marker),
+                                (center_x - size_marker, center_y + size_marker)
+                            ]
+                            pygame.draw.polygon(surface, army_color, points)
+                            pygame.draw.polygon(surface, (0, 0, 0), points, 1)
 
-                                if dominant_type == "infantry":
-                                    # Square for infantry
-                                    pygame.draw.rect(
-                                        surface,
-                                        army_color,
-                                        (center_x - size_marker, center_y - size_marker,
-                                         size_marker * 2, size_marker * 2)
-                                    )
-                                    pygame.draw.rect(
-                                        surface,
-                                        (0, 0, 0),
-                                        (center_x - size_marker, center_y - size_marker,
-                                         size_marker * 2, size_marker * 2),
-                                        1
-                                    )
-                                elif dominant_type == "cavalry":
-                                    # Circle for cavalry
-                                    pygame.draw.circle(
-                                        surface,
-                                        army_color,
-                                        (int(center_x), int(center_y)),
-                                        size_marker
-                                    )
-                                    pygame.draw.circle(
-                                        surface,
-                                        (0, 0, 0),
-                                        (int(center_x), int(center_y)),
-                                        size_marker,
-                                        1
-                                    )
-                                elif dominant_type == "artillery":
-                                    # Triangle for artillery
-                                    points = [
-                                        (center_x, center_y - size_marker),
-                                        (center_x + size_marker, center_y + size_marker),
-                                        (center_x - size_marker, center_y + size_marker)
-                                    ]
-                                    pygame.draw.polygon(surface, army_color, points)
-                                    pygame.draw.polygon(surface, (0, 0, 0), points, 1)
+            # Draw navies
+            for navy_id, navy in military_system.navies.items():
+                if navy.location in self.provinces:
+                    province = self.provinces[navy.location]
 
-                    # Draw navies as well if we're on a water tile
-                    for navy_id, navy in military_system.navies.items():
-                        if navy.location == province.id:
-                            # Only draw on ocean tiles
-                            has_ocean = False
-                            for hex_tile in province.hexes:
-                                if hex_tile.terrain_type == "ocean":
-                                    has_ocean = True
-                                    center_x, center_y = hex_tile.get_pixel_position(
-                                        camera_offset_x, camera_offset_y
-                                    )
+                    # Only draw on ocean tiles
+                    for hex_tile in province.hexes:
+                        if hex_tile.terrain_type == "ocean":
+                            center_x, center_y = hex_tile.get_pixel_position(
+                                camera_offset_x, camera_offset_y
+                            )
 
-                                    # Get nation color
-                                    navy_color = (0, 0, 128)  # Default navy blue
-                                    if navy.nation_id is not None and navy.nation_id in game_state.nations:
-                                        navy_color = game_state.nations[navy.nation_id].color
+                            # Skip if off-screen
+                            if (center_x < -10 or center_x > surface.get_width() + 10 or
+                                    center_y < -10 or center_y > surface.get_height() + 10):
+                                continue
 
-                                    # Draw navy with size indication
-                                    navy_size = sum(navy.units.values())
-                                    size_marker = min(max(4, navy_size // 2), 10)
+                            # Get nation color
+                            navy_color = (0, 0, 128)  # Default navy blue
+                            if navy.nation_id is not None and navy.nation_id in game_state.nations:
+                                navy_color = game_state.nations[navy.nation_id].color
 
-                                    # Ship shape (simple boat)
-                                    ship_points = [
-                                        (center_x - size_marker, center_y),
-                                        (center_x, center_y - size_marker),
-                                        (center_x + size_marker, center_y),
-                                        (center_x, center_y + size_marker // 2)
-                                    ]
-                                    pygame.draw.polygon(surface, navy_color, ship_points)
-                                    pygame.draw.polygon(surface, (0, 0, 0), ship_points, 1)
-                                    break
+                            # Draw navy with size indication
+                            navy_size = sum(navy.units.values())
+                            size_marker = min(max(4, navy_size // 2), 10)
+
+                            # Ship shape (simple boat)
+                            ship_points = [
+                                (center_x - size_marker, center_y),
+                                (center_x, center_y - size_marker),
+                                (center_x + size_marker, center_y),
+                                (center_x, center_y + size_marker // 2)
+                            ]
+                            pygame.draw.polygon(surface, navy_color, ship_points)
+                            pygame.draw.polygon(surface, (0, 0, 0), ship_points, 1)
+                            break  # Only draw once per province
+
     def get_province_for_hex(self, hex_coords):
         """Get the province containing a hex at the given coordinates"""
         if hex_coords not in self.tiles:

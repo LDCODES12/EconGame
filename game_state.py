@@ -44,7 +44,7 @@ class GameState:
         self.nations = {}
         self.dynasties = {}
         self.characters = {}
-        self._generate_initial_world()
+
 
         # Game statistics
         self.statistics = {
@@ -56,6 +56,14 @@ class GameState:
         }
 
         # Current player nation
+        self.player_nation_id = None
+
+    def initialize_world(self):
+        """Initialize the game world after all systems are set up"""
+        if self.military_system is None:
+            raise RuntimeError("Military system must be assigned before initializing the world")
+
+        self._generate_initial_world()
         self.player_nation_id = list(self.nations.keys())[0]
 
     def _generate_initial_world(self):
