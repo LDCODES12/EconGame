@@ -102,10 +102,11 @@ class Label:
 class DiplomacyPanel(Panel):
     """A panel for diplomatic interactions with other nations"""
 
-    def __init__(self, x, y, width, height, game_state):
+    def __init__(self, x, y, width, height, game_state, parent_ui=None):
         super().__init__(x, y, width, height, (40, 40, 40, 230))
         self.game_state = game_state
         self.visible = False
+        self.parent_ui = parent_ui  # Store reference to parent UI
         self.selected_nation_id = None
         self.scroll_offset = 0
         self.max_displayed_nations = 8
@@ -254,12 +255,32 @@ class DiplomacyPanel(Panel):
 
     def _open_peace_negotiation(self, target_nation_id):
         """Open the peace negotiation interface"""
-        # This would open a separate peace negotiation panel
-        # For now, simply make peace without terms
-        player_nation = self.game_state.get_player_nation()
-        self.game_state.make_peace(player_nation.id, target_nation_id)
-        self.update_selected_nation(target_nation_id)  # Refresh buttons
-        return True
+        if self.parent_ui:
+            # Get screen dimensions
+            screen_width, screen_height = pygame.display.get_surface().get_size()
+
+            # Create a peace negotiation panel
+            peace_panel = PeaceNegotiationPanel(
+                (screen_width - 600) // 2,  # center horizontally
+                (screen_height - 400) // 2,  # center vertically
+                600, 400,
+                self.game_state,
+                target_nation_id
+            )
+
+            # Update the UI's reference to the peace panel
+            self.parent_ui.peace_panel = peace_panel
+
+            # Hide the diplomacy panel
+            self.visible = False
+
+            return True
+        else:
+            # Fallback if parent_ui isn't available (should not happen)
+            player_nation = self.game_state.get_player_nation()
+            self.game_state.make_peace(player_nation.id, target_nation_id)
+            self.update_selected_nation(target_nation_id)  # Refresh buttons
+            return True
 
     def _improve_relations(self, target_nation_id):
         """Improve relations with another nation"""
@@ -755,7 +776,7 @@ class UI:
 
         # Create diplomacy panel
         self.diplomacy_panel = DiplomacyPanel(
-            screen_width - 350, 80, 300, 400, self.game_state
+            screen_width - 350, 80, 300, 400, self.game_state, self
         )
 
         # Military control panel
