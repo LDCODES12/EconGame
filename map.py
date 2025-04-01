@@ -106,6 +106,9 @@ class Province:
         self.capital_hex = capital_hex  # Center hex of the province
         self.nation_id = None  # Nation that controls this province
         self.is_capital = False  # Whether this is a nation's capital
+        self.is_occupied = False
+        self.occupier_id = None
+        self.original_owner_id = None
 
         # Development levels
         self.development = {
@@ -316,6 +319,19 @@ class HexMap:
 
         # Draw province borders
         for province in self.provinces.values():
+            # Highlight occupied provinces with special color
+            if hasattr(province, 'is_occupied') and province.is_occupied:
+                for hex_tile in province.hexes:
+                    center_x, center_y = hex_tile.get_pixel_position(camera_offset_x, camera_offset_y)
+                    if (center_x < -HEX_SIZE or center_x > surface.get_width() + HEX_SIZE or
+                            center_y < -HEX_SIZE or center_y > surface.get_height() + HEX_SIZE):
+                        continue
+
+                    corners = hex_tile.get_corners(center_x, center_y)
+                    occupation_surface = pygame.Surface((HEX_WIDTH, HEX_HEIGHT), pygame.SRCALPHA)
+                    occupation_surface.fill((255, 0, 0, 64))  # Semi-transparent red
+                    surface.blit(occupation_surface, (center_x - HEX_SIZE, center_y - HEX_SIZE))
+
             for hex_tile in province.hexes:
                 center_x, center_y = hex_tile.get_pixel_position(camera_offset_x, camera_offset_y)
 

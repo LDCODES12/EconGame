@@ -37,6 +37,7 @@ class Game:
         self.military_system = MilitarySystem()
         self.event_system = EventSystem(self.game_state)
         self.ai_manager = AIManager(self.game_state)
+        self.military_system = MilitarySystem(self.game_state)  # Pass game_state here
 
         # Add systems to game state
         self.game_state.military_system = self.military_system

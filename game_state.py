@@ -425,13 +425,48 @@ class GameState:
                 return True
         return False
 
-    def make_peace(self, nation1_id, nation2_id):
-        """Make peace between two nations"""
+    def make_peace(self, nation1_id, nation2_id, province_transfers=None):
+        """Make peace between two nations with optional province transfers"""
         if nation1_id in self.nations and nation2_id in self.nations:
-            result = self.nations[nation1_id].make_peace(nation2_id, self.year)
-            if result:
+            # Process province transfers first (if any)
+            if province_transfers:
+                for prov_id, new_owner_id in province_transfers.items():
+                    if new_owner_id in [nation1_id, nation2_id]:
+                        province = self.map.provinces.get(prov_id)
+                        if province:
+                            # Find current owner
+                            current_owner_id = province.nation_id
+                            if current_owner_id in self.nations:
+                                current_owner = self.nations[current_owner_id]
+                                # Transfer the province
+                                current_owner.transfer_province(prov_id, new_owner_id)
+
+            # End occupation status for provinces
+            for province in self.map.provinces.values():
+                if province.is_occupied and province.occupier_id in [nation1_id, nation2_id]:
+                    # Keep the new owner (occupier) but remove occupation status
+                    province.nation_id = province.occupier_id
+                    province.is_occupied = False
+                    province.occupier_id = None
+                    province.original_owner_id = None
+
+                    # Update the province lists for both nations
+                    if province.id in self.nations[nation1_id].provinces and province.nation_id != nation1_id:
+                        self.nations[nation1_id].remove_province(province.id)
+                        self.nations[province.nation_id].add_province(province.id)
+
+                    if province.id in self.nations[nation2_id].provinces and province.nation_id != nation2_id:
+                        self.nations[nation2_id].remove_province(province.id)
+                        self.nations[province.nation_id].add_province(province.id)
+
+            # Make peace in diplomatic relations
+            result1 = self.nations[nation1_id].make_peace(nation2_id, self.year)
+            result2 = self.nations[nation2_id].make_peace(nation1_id, self.year)
+
+            if result1 or result2:
                 self.statistics["treaties_signed"] += 1
                 return True
+
         return False
 
     def arrange_marriage(self, nation1_id, nation2_id):

@@ -245,10 +245,11 @@ class Navy(Army):
 class Battle:
     """Represents a military battle between armies"""
 
-    def __init__(self, attacker_army, defender_army, province_id):
+    def __init__(self, attacker_army, defender_army, province_id, game_state):
         self.attacker = attacker_army
         self.defender = defender_army
         self.province_id = province_id
+        self.game_state = game_state  # Add this line
         self.day = 0
         self.is_completed = False
         self.winner = None
@@ -256,6 +257,19 @@ class Battle:
             "attacker": {},
             "defender": {}
         }
+
+    def _occupy_province(self, nation_id, province):
+        """Occupy a province after winning a battle"""
+        # Store the original owner for peace treaties
+        if not hasattr(province, 'original_owner_id'):
+            province.original_owner_id = province.nation_id
+
+        # Set occupation status
+        province.is_occupied = True
+        province.occupier_id = nation_id
+
+        # Log the occupation
+        print(f"Province {province.name} occupied by {nation_id}")
 
     def simulate_battle(self, attacker_nation, defender_nation, commander_characters=None):
         """Simulate the battle and determine the outcome"""
@@ -335,6 +349,13 @@ class Battle:
             self.attacker.update_morale(-0.3)
             self.defender.update_morale(0.1)
 
+        # Handle province occupation after battle
+        if self.winner == "attacker":
+            # Attackers occupy the province if they win
+            province = self.game_state.map.provinces.get(self.province_id)
+            if province:
+                self._occupy_province(attacker_nation.id, province)
+
         self.is_completed = True
         return self.winner
 
@@ -349,12 +370,13 @@ class Battle:
 class MilitarySystem:
     """Manages military operations in the game"""
 
-    def __init__(self):
+    def __init__(self, game_state=None):
         self.armies = {}  # Dict mapping army_id to Army
         self.navies = {}  # Dict mapping navy_id to Navy
         self.battles = []  # List of ongoing battles
         self.next_army_id = 0
         self.next_navy_id = 0
+        self.game_state = game_state  # Add this line to store the game_state reference
 
     def create_army(self, nation_id, name, province_id):
         """Create a new army"""
@@ -419,7 +441,7 @@ class MilitarySystem:
             defender = self.armies[defender_id]
 
             if attacker.location == defender.location == province_id:
-                battle = Battle(attacker, defender, province_id)
+                battle = Battle(attacker, defender, province_id, self.game_state)
                 self.battles.append(battle)
                 return battle
 

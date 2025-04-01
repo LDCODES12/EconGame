@@ -239,6 +239,40 @@ class Nation:
                 return True
         return False
 
+    def annex_province(self, province_id):
+        """Permanently annex a province to this nation"""
+        if province_id not in self.provinces:
+            province = self.game_state.map.provinces.get(province_id)
+            if province:
+                # Remove from previous owner if any
+                if province.nation_id is not None and province.nation_id != self.id:
+                    previous_owner = self.game_state.nations.get(province.nation_id)
+                    if previous_owner:
+                        previous_owner.remove_province(province_id)
+
+                # Add to this nation
+                province.nation_id = self.id
+                province.is_occupied = False
+                province.occupier_id = None
+                self.add_province(province_id)
+
+                # Update resources/income
+                province.update_resources()
+                return True
+        return False
+
+    def transfer_province(self, province_id, target_nation_id):
+        """Transfer a province to another nation (for peace treaties)"""
+        if province_id in self.provinces:
+            target_nation = self.game_state.nations.get(target_nation_id)
+            if target_nation:
+                # Remove from this nation
+                self.remove_province(province_id)
+
+                # Add to target nation
+                return target_nation.annex_province(province_id)
+        return False
+
     def yearly_development(self):
         """Handle yearly nation development"""
         # Reset income/expense tracking

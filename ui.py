@@ -569,7 +569,16 @@ class UI:
         # Update province labels
         self.province_name_label.set_text(f"Province: {province.name}")
 
-        if province.nation_id is not None and province.nation_id in self.game_state.nations:
+        if hasattr(province, 'is_occupied') and province.is_occupied:
+            # Show occupation status
+            occupier = self.game_state.nations.get(province.occupier_id)
+            original_owner = self.game_state.nations.get(province.original_owner_id)
+
+            if occupier and original_owner:
+                self.province_owner_label.set_text(
+                    f"Occupied by {occupier.name} (from {original_owner.name})"
+                )
+        elif province.nation_id is not None and province.nation_id in self.game_state.nations:
             owner = self.game_state.nations[province.nation_id]
             self.province_owner_label.set_text(f"Owner: {owner.name}")
         else:
