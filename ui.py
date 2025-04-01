@@ -99,6 +99,505 @@ class Label:
         self.text = text
 
 
+class DiplomacyPanel(Panel):
+    """A panel for diplomatic interactions with other nations"""
+
+    def __init__(self, x, y, width, height, game_state):
+        super().__init__(x, y, width, height, (40, 40, 40, 230))
+        self.game_state = game_state
+        self.visible = False
+        self.selected_nation_id = None
+        self.scroll_offset = 0
+        self.max_displayed_nations = 8
+
+        # Title
+        self.title_label = Label(x + 20, y + 20, "Diplomacy")
+        self.add_element(self.title_label)
+
+        # Nation list and action buttons will be created dynamically
+        self.nation_labels = []
+        self.nation_buttons = []
+        self.action_buttons = []
+
+        # Close button
+        self.close_button = Button(x + width - 30, y + 10, 20, 20, "X", (150, 20, 20))
+        self.add_element(self.close_button)
+
+        # Create nation list
+        self._create_nation_list()
+
+    def _create_nation_list(self):
+        """Create the list of nations for diplomacy"""
+        player_nation = self.game_state.get_player_nation()
+        y_offset = self.rect.y + 60
+
+        for nation_id, nation in self.game_state.nations.items():
+            if nation_id == player_nation.id:
+                continue  # Skip player's own nation
+
+            # Nation name label
+            label = Label(self.rect.x + 20, y_offset, f"{nation.name}")
+            self.nation_labels.append(label)
+
+            # Select button
+            select_button = Button(self.rect.x + 150, y_offset, 80, 25, "Select")
+            select_button.nation_id = nation_id  # Store nation_id as attribute
+            self.nation_buttons.append(select_button)
+
+            y_offset += 35
+
+    def draw(self, surface, font):
+        """Draw the diplomacy panel"""
+        if not self.visible:
+            return
+
+        super().draw(surface, font)
+
+        # Draw nation list with scrolling
+        visible_nations = self.nation_labels[self.scroll_offset:self.scroll_offset + self.max_displayed_nations]
+        visible_buttons = self.nation_buttons[self.scroll_offset:self.scroll_offset + self.max_displayed_nations]
+
+        for label in visible_nations:
+            label.draw(surface, font)
+
+        for button in visible_buttons:
+            button.draw(surface, font)
+
+        # Draw action buttons if a nation is selected
+        if self.selected_nation_id is not None:
+            for button in self.action_buttons:
+                button.draw(surface, font)
+
+            # Draw relation info
+            player_nation = self.game_state.get_player_nation()
+            relation = player_nation.get_relation(self.selected_nation_id)
+
+            if relation:
+                nation = self.game_state.nations[self.selected_nation_id]
+                relation_text = f"Relations with {nation.name}: {relation.opinion}"
+                war_status = "At War" if relation.at_war else "At Peace"
+
+                relation_label = Label(self.rect.x + 20, self.rect.y + 250, relation_text)
+                status_label = Label(self.rect.x + 20, self.rect.y + 280, f"Status: {war_status}")
+
+                relation_label.draw(surface, font)
+                status_label.draw(surface, font)
+
+    def update_selected_nation(self, nation_id):
+        """Update selected nation and action buttons"""
+        self.selected_nation_id = nation_id
+        self.action_buttons = []
+
+        if nation_id is None:
+            return
+
+        player_nation = self.game_state.get_player_nation()
+        relation = player_nation.get_relation(nation_id)
+
+        if relation:
+            # Clear previous action buttons
+            y_offset = self.rect.y + 200
+
+            if not relation.at_war:
+                # Add "Declare War" button
+                declare_war_button = Button(self.rect.x + 20, y_offset, 150, 30, "Declare War", (200, 50, 50))
+                declare_war_button.nation_id = nation_id
+                self.action_buttons.append(declare_war_button)
+            else:
+                # Add "Negotiate Peace" button
+                peace_button = Button(self.rect.x + 20, y_offset, 150, 30, "Negotiate Peace", (50, 150, 50))
+                peace_button.nation_id = nation_id
+                self.action_buttons.append(peace_button)
+
+            # Add "Improve Relations" button
+            improve_button = Button(self.rect.x + 20, y_offset + 40, 150, 30, "Improve Relations")
+            improve_button.nation_id = nation_id
+            self.action_buttons.append(improve_button)
+
+    def handle_click(self, mouse_pos, mouse_pressed):
+        """Handle clicks on diplomacy panel elements"""
+        if not self.visible:
+            return False
+
+        # Check close button
+        if self.close_button.check_click(mouse_pos, mouse_pressed):
+            self.visible = False
+            return True
+
+        # Check nation select buttons
+        visible_buttons = self.nation_buttons[self.scroll_offset:self.scroll_offset + self.max_displayed_nations]
+        for button in visible_buttons:
+            if button.check_click(mouse_pos, mouse_pressed):
+                self.update_selected_nation(button.nation_id)
+                return True
+
+        # Check action buttons
+        for button in self.action_buttons:
+            if button.check_click(mouse_pos, mouse_pressed):
+                if "Declare War" in button.text:
+                    return self._handle_declare_war(button.nation_id)
+                elif "Negotiate Peace" in button.text:
+                    return self._open_peace_negotiation(button.nation_id)
+                elif "Improve Relations" in button.text:
+                    return self._improve_relations(button.nation_id)
+
+        return False
+
+    def _handle_declare_war(self, target_nation_id):
+        """Handle declaring war on another nation"""
+        player_nation = self.game_state.get_player_nation()
+        result = self.game_state.declare_war(player_nation.id, target_nation_id)
+        if result:
+            self.update_selected_nation(target_nation_id)  # Refresh buttons
+            return True
+        return False
+
+    def _open_peace_negotiation(self, target_nation_id):
+        """Open the peace negotiation interface"""
+        # This would open a separate peace negotiation panel
+        # For now, simply make peace without terms
+        player_nation = self.game_state.get_player_nation()
+        self.game_state.make_peace(player_nation.id, target_nation_id)
+        self.update_selected_nation(target_nation_id)  # Refresh buttons
+        return True
+
+    def _improve_relations(self, target_nation_id):
+        """Improve relations with another nation"""
+        player_nation = self.game_state.get_player_nation()
+        if target_nation_id in player_nation.relations:
+            player_nation.relations[target_nation_id].improve_relations(10)
+            return True
+        return False
+
+
+class PeaceNegotiationPanel(Panel):
+    """Panel for negotiating peace terms"""
+
+    def __init__(self, x, y, width, height, game_state, target_nation_id):
+        super().__init__(x, y, width, height, (40, 40, 40, 230))
+        self.game_state = game_state
+        self.target_nation_id = target_nation_id
+        self.visible = True
+        self.demanded_provinces = []
+
+        # Title
+        target_nation = self.game_state.nations[target_nation_id]
+        self.title_label = Label(x + 20, y + 20, f"Peace Negotiation with {target_nation.name}")
+        self.add_element(self.title_label)
+
+        # Close button
+        self.close_button = Button(x + width - 30, y + 10, 20, 20, "X", (150, 20, 20))
+        self.add_element(self.close_button)
+
+        # Occupied provinces list
+        self.province_labels = []
+        self.province_buttons = []
+        self._create_province_list()
+
+        # Make Peace button
+        self.peace_button = Button(x + (width - 200) // 2, y + height - 50, 200, 40, "Make Peace")
+        self.add_element(self.peace_button)
+
+    def _create_province_list(self):
+        """Create list of provinces that can be demanded"""
+        y_offset = self.rect.y + 60
+        occupied_provinces = []
+
+        # Find occupied provinces
+        for province in self.game_state.map.provinces.values():
+            if province.is_occupied and province.occupier_id == self.game_state.player_nation_id and province.original_owner_id == self.target_nation_id:
+                occupied_provinces.append(province)
+
+        # Create labels and checkboxes for each province
+        for province in occupied_provinces:
+            label = Label(self.rect.x + 50, y_offset, f"{province.name}")
+            self.province_labels.append(label)
+
+            # Create demand checkbox
+            checkbox = Button(self.rect.x + 20, y_offset, 20, 20, "", (100, 100, 100))
+            checkbox.province_id = province.id
+            checkbox.is_checked = False
+            self.province_buttons.append(checkbox)
+
+            y_offset += 30
+
+    def draw(self, surface, font):
+        """Draw the peace negotiation panel"""
+        if not self.visible:
+            return
+
+        super().draw(surface, font)
+
+        # Draw province list
+        for label in self.province_labels:
+            label.draw(surface, font)
+
+        for button in self.province_buttons:
+            button.draw(surface, font)
+
+            # If checkbox is checked, draw an X
+            if button.is_checked:
+                pygame.draw.line(surface, (255, 255, 255),
+                                 (button.rect.x + 3, button.rect.y + 3),
+                                 (button.rect.x + button.rect.width - 3, button.rect.y + button.rect.height - 3), 2)
+                pygame.draw.line(surface, (255, 255, 255),
+                                 (button.rect.x + 3, button.rect.y + button.rect.height - 3),
+                                 (button.rect.x + button.rect.width - 3, button.rect.y + 3), 2)
+
+    def handle_click(self, mouse_pos, mouse_pressed):
+        """Handle clicks on peace negotiation panel elements"""
+        if not self.visible:
+            return False
+
+        # Check close button
+        if self.close_button.check_click(mouse_pos, mouse_pressed):
+            self.visible = False
+            return True
+
+        # Check province checkboxes
+        for button in self.province_buttons:
+            if button.check_click(mouse_pos, mouse_pressed):
+                button.is_checked = not button.is_checked
+
+                if button.is_checked:
+                    self.demanded_provinces.append(button.province_id)
+                else:
+                    if button.province_id in self.demanded_provinces:
+                        self.demanded_provinces.remove(button.province_id)
+                return True
+
+        # Check make peace button
+        if self.peace_button.check_click(mouse_pos, mouse_pressed):
+            return self._make_peace()
+
+        return False
+
+    def _make_peace(self):
+        """Execute the peace treaty with selected terms"""
+        player_nation = self.game_state.get_player_nation()
+
+        # Create province transfers dict
+        province_transfers = {}
+        for province_id in self.demanded_provinces:
+            province_transfers[province_id] = player_nation.id
+
+        # Make peace with province transfers
+        result = self.game_state.make_peace(player_nation.id, self.target_nation_id, province_transfers)
+        if result:
+            self.visible = False
+        return result
+
+
+class MilitaryControlPanel(Panel):
+    """Panel for military control and conquest operations"""
+
+    def __init__(self, x, y, width, height, game_state):
+        super().__init__(x, y, width, height, (40, 40, 40, 230))
+        self.game_state = game_state
+        self.visible = False
+        self.selected_army_id = None
+        self.target_province_id = None
+
+        # Title
+        self.title_label = Label(x + 20, y + 20, "Military Control")
+        self.add_element(self.title_label)
+
+        # Close button
+        self.close_button = Button(x + width - 30, y + 10, 20, 20, "X", (150, 20, 20))
+        self.add_element(self.close_button)
+
+        # Army selection list
+        self.army_labels = []
+        self.army_buttons = []
+        self._create_army_list()
+
+        # Movement controls (shown when army selected)
+        self.move_button = Button(x + 20, y + 200, 150, 30, "Move to Province")
+        self.attack_button = Button(x + 20, y + 240, 150, 30, "Attack Province")
+
+        # Instruction label
+        self.instruction_label = Label(x + 20, y + 280, "Click on the map to select target province")
+
+        # Army info
+        self.army_info_label = Label(x + 20, y + 320, "")
+
+    def _create_army_list(self):
+        """Create list of player armies"""
+        y_offset = self.rect.y + 60
+        player_armies = []
+
+        # Find player armies
+        for army_id, army in self.game_state.military_system.armies.items():
+            if army.nation_id == self.game_state.player_nation_id:
+                player_armies.append(army)
+
+        # Create labels and select buttons for each army
+        for army in player_armies:
+            label = Label(self.rect.x + 20, y_offset, f"{army.name} ({sum(army.units.values())} units)")
+            self.army_labels.append(label)
+
+            # Create select button
+            select_button = Button(self.rect.x + 180, y_offset, 80, 25, "Select")
+            select_button.army_id = army.id
+            self.army_buttons.append(select_button)
+
+            y_offset += 35
+
+    def update_army_list(self):
+        """Update the army list (for when armies are created/destroyed)"""
+        self.army_labels = []
+        self.army_buttons = []
+        self._create_army_list()
+
+    def draw(self, surface, font):
+        """Draw the military control panel"""
+        if not self.visible:
+            return
+
+        super().draw(surface, font)
+
+        # Draw army list
+        for label in self.army_labels:
+            label.draw(surface, font)
+
+        for button in self.army_buttons:
+            button.draw(surface, font)
+
+        # If an army is selected, draw movement controls
+        if self.selected_army_id is not None:
+            self.move_button.draw(surface, font)
+            self.attack_button.draw(surface, font)
+            self.instruction_label.draw(surface, font)
+            self.army_info_label.draw(surface, font)
+
+    def set_selected_army(self, army_id):
+        """Set the selected army and update info"""
+        self.selected_army_id = army_id
+
+        if army_id is not None and army_id in self.game_state.military_system.armies:
+            army = self.game_state.military_system.armies[army_id]
+            # Update army info label
+            unit_info = ", ".join([f"{qty} {unit}" for unit, qty in army.units.items()])
+            self.army_info_label.set_text(f"Units: {unit_info}")
+        else:
+            self.army_info_label.set_text("")
+
+    def handle_click(self, mouse_pos, mouse_pressed):
+        """Handle clicks on military control panel elements"""
+        if not self.visible:
+            return False
+
+        # Check close button
+        if self.close_button.check_click(mouse_pos, mouse_pressed):
+            self.visible = False
+            return True
+
+        # Check army select buttons
+        for button in self.army_buttons:
+            if button.check_click(mouse_pos, mouse_pressed):
+                self.set_selected_army(button.army_id)
+                return True
+
+        # Check movement buttons if army selected
+        if self.selected_army_id is not None:
+            # Move to province button
+            if self.move_button.check_click(mouse_pos, mouse_pressed):
+                self.instruction_label.set_text("Click on the map to select move target")
+                self.game_state.waiting_for_province_selection = True
+                self.game_state.province_selection_mode = "move"
+                return True
+
+            # Attack province button
+            if self.attack_button.check_click(mouse_pos, mouse_pressed):
+                self.instruction_label.set_text("Click on the map to select attack target")
+                self.game_state.waiting_for_province_selection = True
+                self.game_state.province_selection_mode = "attack"
+                return True
+
+        return False
+
+    def handle_province_selection(self, province_id):
+        """Handle when a province is selected on the map"""
+        if not self.game_state.waiting_for_province_selection or self.selected_army_id is None:
+            return False
+
+        army = self.game_state.military_system.armies.get(self.selected_army_id)
+        if not army:
+            return False
+
+        province = self.game_state.map.provinces.get(province_id)
+        if not province:
+            return False
+
+        # Get selection mode
+        mode = self.game_state.province_selection_mode
+
+        if mode == "move":
+            # Find path between current location and target
+            start_province = self.game_state.map.provinces.get(army.location)
+            if start_province and start_province.capital_hex and province.capital_hex:
+                start_hex = (start_province.capital_hex.q, start_province.capital_hex.r)
+                end_hex = (province.capital_hex.q, province.capital_hex.r)
+
+                # Find path using map's pathfinding
+                hex_path = self.game_state.map.find_path(start_hex, end_hex)
+
+                if hex_path:
+                    # Convert hex path to province path
+                    province_path = []
+                    for hex_pos in hex_path[1:]:  # Skip first (current position)
+                        province = self.game_state.map.get_province_for_hex(hex_pos)
+                        if province and province.id not in province_path:
+                            province_path.append(province.id)
+
+                    # Set army path
+                    if province_path:
+                        self.game_state.military_system.move_army(army.id, province_path)
+                        self.instruction_label.set_text(f"Moving to {province.name}")
+                        return True
+
+        elif mode == "attack":
+            # Check if province belongs to another nation
+            if province.nation_id is not None and province.nation_id != self.game_state.player_nation_id:
+                target_nation = self.game_state.nations.get(province.nation_id)
+                if target_nation:
+                    # Check if we're at war
+                    player_nation = self.game_state.get_player_nation()
+                    relation = player_nation.get_relation(target_nation.id)
+
+                    if relation and relation.at_war:
+                        # Find path to enemy province
+                        start_province = self.game_state.map.provinces.get(army.location)
+                        if start_province and start_province.capital_hex and province.capital_hex:
+                            start_hex = (start_province.capital_hex.q, start_province.capital_hex.r)
+                            end_hex = (province.capital_hex.q, province.capital_hex.r)
+
+                            # Find path using map's pathfinding
+                            hex_path = self.game_state.map.find_path(start_hex, end_hex)
+
+                            if hex_path:
+                                # Convert hex path to province path
+                                province_path = []
+                                for hex_pos in hex_path[1:]:  # Skip first (current position)
+                                    path_province = self.game_state.map.get_province_for_hex(hex_pos)
+                                    if path_province and path_province.id not in province_path:
+                                        province_path.append(path_province.id)
+
+                                # Set army path
+                                if province_path:
+                                    self.game_state.military_system.move_army(army.id, province_path)
+                                    self.instruction_label.set_text(f"Attacking {province.name}")
+                                    return True
+                    else:
+                        self.instruction_label.set_text(f"Cannot attack: Not at war with {target_nation.name}")
+                        return False
+
+        # Reset selection mode
+        self.game_state.waiting_for_province_selection = False
+        self.game_state.province_selection_mode = None
+        return False
+
+
 class UI:
     """Main UI class that manages all UI elements"""
 
@@ -162,6 +661,13 @@ class UI:
         self.top_bar.add_element(self.treasury_label)
         self.top_bar.add_element(self.manpower_label)
         self.top_bar.add_element(self.stability_label)
+
+        # Add new UI elements for war and conquest
+        self.diplomacy_button = Button(screen_width - 150, 15, 120, 30, "Diplomacy")
+        self.military_button = Button(screen_width - 300, 15, 120, 30, "Military")
+
+        self.top_bar.add_element(self.diplomacy_button)
+        self.top_bar.add_element(self.military_button)
 
         # Province panel (initially hidden)
         self.province_panel = Panel(20, 80, 300, 400, (40, 40, 40, 230))
@@ -247,9 +753,41 @@ class UI:
 
         # Event option buttons (will be created dynamically)
 
+        # Create diplomacy panel
+        self.diplomacy_panel = DiplomacyPanel(
+            screen_width - 350, 80, 300, 400, self.game_state
+        )
+
+        # Military control panel
+        self.military_panel = MilitaryControlPanel(
+            screen_width - 350, 80, 300, 400, self.game_state
+        )
+
+        # Peace negotiation panel will be created when needed
+        self.peace_panel = None
+
+        # Add fields to game_state to track province selection
+        self.game_state.waiting_for_province_selection = False
+        self.game_state.province_selection_mode = None
+
     def handle_event(self, event):
         """Handle input events"""
         mouse_pos = pygame.mouse.get_pos()
+
+        # Check if diplomacy panel is handling the event
+        if self.diplomacy_panel.visible and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.diplomacy_panel.handle_click(mouse_pos, pygame.mouse.get_pressed()):
+                return
+
+        # Check if military panel is handling the event
+        if self.military_panel.visible and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.military_panel.handle_click(mouse_pos, pygame.mouse.get_pressed()):
+                return
+
+        # Check if peace panel is handling the event
+        if self.peace_panel and self.peace_panel.visible and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.peace_panel.handle_click(mouse_pos, pygame.mouse.get_pressed()):
+                return
 
         # If an event popup is active, it blocks other interactions
         if self.event_system and self.event_system.get_current_event() and self.event_panel.visible:
@@ -284,11 +822,39 @@ class UI:
                 elif self.speed3_button.check_click(mouse_pos, pygame.mouse.get_pressed()):
                     self.game_state.set_game_speed(3)
 
+                # Handle clicks on diplomacy and military buttons
+                elif self.diplomacy_button.check_click(mouse_pos, pygame.mouse.get_pressed()):
+                    self.diplomacy_panel.visible = not self.diplomacy_panel.visible
+                    # Hide other panels
+                    self.military_panel.visible = False
+                    if self.peace_panel:
+                        self.peace_panel.visible = False
+                    return
+
+                elif self.military_button.check_click(mouse_pos, pygame.mouse.get_pressed()):
+                    self.military_panel.visible = not self.military_panel.visible
+                    self.military_panel.update_army_list()  # Refresh army list
+                    # Hide other panels
+                    self.diplomacy_panel.visible = False
+                    if self.peace_panel:
+                        self.peace_panel.visible = False
+                    return
+
                 # Check for click on the map
                 elif not self.top_bar.rect.collidepoint(mouse_pos) and not (
                         self.province_panel.visible and self.province_panel.rect.collidepoint(
-                        mouse_pos)) and not self.nation_panel.rect.collidepoint(mouse_pos):
-                    self.handle_map_click(mouse_pos)
+                    mouse_pos)) and not self.nation_panel.rect.collidepoint(mouse_pos):
+
+                    # Handle province selection for military movement
+                    if self.game_state.waiting_for_province_selection:
+                        if not self.military_panel.rect.collidepoint(mouse_pos):
+                            province = self.handle_map_click(mouse_pos, for_selection=True)
+                            if province:
+                                self.military_panel.handle_province_selection(province.id)
+                                return
+                    else:
+                        # Regular map click
+                        self.handle_map_click(mouse_pos)
 
                 # Check for clicking on province panel buttons
                 if self.province_panel.visible:
@@ -300,8 +866,10 @@ class UI:
                 # Start dragging the map
                 if not self.top_bar.rect.collidepoint(mouse_pos) and not (
                         self.province_panel.visible and self.province_panel.rect.collidepoint(
-                        mouse_pos)) and not self.nation_panel.rect.collidepoint(mouse_pos) and not (
-                        self.event_panel.visible and self.event_panel.rect.collidepoint(mouse_pos)):
+                    mouse_pos)) and not self.nation_panel.rect.collidepoint(mouse_pos) and not (
+                        self.event_panel.visible and self.event_panel.rect.collidepoint(mouse_pos)) and not (
+                        self.diplomacy_panel.visible and self.diplomacy_panel.rect.collidepoint(mouse_pos)) and not (
+                        self.military_panel.visible and self.military_panel.rect.collidepoint(mouse_pos)):
                     self.dragging = True
                     self.drag_start = mouse_pos
 
@@ -331,6 +899,8 @@ class UI:
             self.speed1_button.check_hover(mouse_pos)
             self.speed2_button.check_hover(mouse_pos)
             self.speed3_button.check_hover(mouse_pos)
+            self.diplomacy_button.check_hover(mouse_pos)
+            self.military_button.check_hover(mouse_pos)
 
             if self.province_panel.visible:
                 self.dev_tax_button.check_hover(mouse_pos)
@@ -344,8 +914,8 @@ class UI:
             self.tech_dip_button.check_hover(mouse_pos)
             self.tech_mil_button.check_hover(mouse_pos)
 
-    def handle_map_click(self, mouse_pos):
-        """Handle clicking on the map"""
+    def handle_map_click(self, mouse_pos, for_selection=False):
+        """Handle clicking on the map (modify existing method)"""
         # Get the hex tile at the mouse position
         hex_tile = self.game_state.map.get_hex_at_pixel(mouse_pos[0], mouse_pos[1], self.camera_x, self.camera_y)
 
@@ -354,9 +924,16 @@ class UI:
             province = self.game_state.map.get_province_for_hex((hex_tile.q, hex_tile.r))
 
             if province:
-                self.selected_province = province
-                self.update_province_panel()
-                self.province_panel.visible = True
+                if for_selection:
+                    # Just return the province without opening the panel
+                    return province
+                else:
+                    # Regular behavior - open province panel
+                    self.selected_province = province
+                    self.update_province_panel()
+                    self.province_panel.visible = True
+
+        return None
 
     def handle_province_panel_clicks(self, mouse_pos, mouse_pressed):
         """Handle clicking on province panel buttons"""
@@ -643,6 +1220,16 @@ class UI:
             self.province_panel.draw(self.screen, self.font_medium)
 
         self.nation_panel.draw(self.screen, self.font_medium)
+
+        # Draw war and conquest panels
+        if self.diplomacy_panel.visible:
+            self.diplomacy_panel.draw(self.screen, self.font_medium)
+
+        if self.military_panel.visible:
+            self.military_panel.draw(self.screen, self.font_medium)
+
+        if self.peace_panel and self.peace_panel.visible:
+            self.peace_panel.draw(self.screen, self.font_medium)
 
         # Draw event panel on top if active
         if self.event_panel.visible:
