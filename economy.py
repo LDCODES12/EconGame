@@ -94,6 +94,15 @@ class TradeNode:
                 if nation_id in nations_dict:
                     nations_dict[nation_id].add_income("trade", income)
 
+    def get_outflow_value(self, target_node_id):
+        """Calculate trade value flowing to a target node"""
+        if target_node_id not in self.outgoing_connections:
+            return 0
+
+        # In a more sophisticated simulation, you'd calculate the actual flow
+        # This is a simplified version
+        return self.trade_value * 0.7  # 70% of value flows outward
+
 
 class EconomySystem:
     """Manages the economic simulation"""

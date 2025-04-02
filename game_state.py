@@ -23,6 +23,10 @@ NATION_COLORS = [(255, 0, 0), (0, 0, 255), (255, 255, 0), (0, 0, 0),
 class GameState:
     """Manages the overall game state and data"""
 
+    # Make MONTHS a class variable
+    MONTHS = ["January", "February", "March", "April", "May", "June",
+              "July", "August", "September", "October", "November", "December"]
+
     def __init__(self):
         """Initialize the game state"""
         self.paused = False

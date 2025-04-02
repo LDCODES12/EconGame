@@ -4,6 +4,7 @@ User interface module for MiniEmpire
 import pygame
 import sys
 from military import UnitType
+import math
 
 
 
@@ -809,6 +810,10 @@ class TradePanel(Panel):
         self.title_label = Label(x + 20, y + 20, "Trade Network")
         self.add_element(self.title_label)
 
+        # Network visualization title
+        self.network_title = Label(x + 20, y + 50, "Trade Flow Map:")
+        self.add_element(self.network_title)
+
         # Close button
         self.close_button = Button(x + width - 30, y + 10, 20, 20, "X", (150, 20, 20))
         self.add_element(self.close_button)
@@ -827,9 +832,21 @@ class TradePanel(Panel):
         # Create trade nodes list
         self._create_trade_nodes_list()
 
+        # Add network interaction - clicking on the visualization selects a node
+        self.network_interaction_area = pygame.Rect(x + 20, y + 80, width - 40, 140)
+
+        # Initialize trade income history
+        self.trade_income_history = {}
+
     def _create_trade_goods_list(self):
         """Create list of trade goods and their prices"""
         y_offset = self.rect.y + 80
+
+        # Title for goods section
+        self.goods_title = Label(self.rect.x + 20, y_offset, "Trade Goods Prices:")
+        self.add_element(self.goods_title)
+
+        y_offset += 30
 
         for good, data in self.game_state.economy.trade_goods.GOODS.items():
             current_price = self.game_state.economy.trade_goods.current_prices[good]
@@ -840,7 +857,7 @@ class TradePanel(Panel):
 
     def _create_trade_nodes_list(self):
         """Create list of trade nodes"""
-        y_offset = self.rect.y + 240
+        y_offset = self.rect.y + 380
         self.trade_nodes_title = Label(self.rect.x + 20, y_offset, "Trade Nodes:")
         self.add_element(self.trade_nodes_title)
 
@@ -872,36 +889,7 @@ class TradePanel(Panel):
         node = self.game_state.economy.trade_nodes[node_id]
 
         # Add node-specific information
-        y_offset = self.rect.y + 400
-
-        # Node name and value
-        node_title = Label(self.rect.x + 20, y_offset, f"Node: {node.name}")
-        node_title.is_node_specific = True
-        self.add_element(node_title)
-
-        y_offset += 30
-
-        value_label = Label(self.rect.x + 20, y_offset,
-                            f"Trade Value: {node.trade_value:.1f}")
-        value_label.is_node_specific = True
-        self.add_element(value_label)
-
-        y_offset += 30
-
-        # List provinces in this node
-        provinces_label = Label(self.rect.x + 20, y_offset, "Provinces:")
-        provinces_label.is_node_specific = True
-        self.add_element(provinces_label)
-
-        y_offset += 25
-
-        for province_id in node.provinces:
-            if province_id in self.game_state.map.provinces:
-                province = self.game_state.map.provinces[province_id]
-                prov_label = Label(self.rect.x + 40, y_offset, province.name)
-                prov_label.is_node_specific = True
-                self.add_element(prov_label)
-                y_offset += 20
+        y_offset = self.rect.y + 450  # Adjusted position
 
         # Add trade policy buttons if player has presence
         player_nation = self.game_state.get_player_nation()
@@ -914,20 +902,258 @@ class TradePanel(Panel):
                 break
 
         if player_has_province:
-            y_offset += 20
+            # Get current policy
+            current_policy = None
+            if hasattr(node, 'trade_policies'):
+                current_policy = node.trade_policies.get(player_nation.id)
 
             # Trade policy buttons
-            steer_button = Button(self.rect.x + 20, y_offset, 150, 30, "Steer Trade")
+            steer_button = Button(self.rect.x + 20, y_offset, 150, 30,
+                                  "▶ Steer Trade" if current_policy != "steer" else "✓ Steering Trade")
             steer_button.node_id = node_id
             steer_button.is_node_specific = True
             self.add_element(steer_button)
 
+            # Highlight the active policy button
+            if current_policy == "steer":
+                steer_button.color = (50, 150, 50)
+
             y_offset += 40
 
-            collect_button = Button(self.rect.x + 20, y_offset, 150, 30, "Collect Trade")
+            collect_button = Button(self.rect.x + 20, y_offset, 150, 30,
+                                    "⚿ Collect Trade" if current_policy != "collect" else "✓ Collecting Trade")
             collect_button.node_id = node_id
             collect_button.is_node_specific = True
             self.add_element(collect_button)
+
+            # Highlight the active policy button
+            if current_policy == "collect":
+                collect_button.color = (50, 150, 50)
+
+        # Initialize trade income history if not present
+        if not hasattr(self, 'trade_income_history'):
+            self.trade_income_history = {}
+
+        # Track income for this node
+        if node_id not in self.trade_income_history:
+            self.trade_income_history[node_id] = []
+
+        # Add current income to history (limited to last 12 entries)
+        player_income = 0
+        if hasattr(node, 'trade_income'):
+            player_income = node.trade_income.get(player_nation.id, 0)
+
+        self.trade_income_history[node_id].append(player_income)
+        if len(self.trade_income_history[node_id]) > 12:
+            self.trade_income_history[node_id].pop(0)
+
+    def _render_trade_income_details(self, surface, font):
+        """Render detailed information about player's trade income"""
+        if self.selected_trade_node is None:
+            return
+
+        # Get player nation and selected node
+        player_nation = self.game_state.get_player_nation()
+        node = self.game_state.economy.trade_nodes.get(self.selected_trade_node)
+
+        if not node:
+            return
+
+        # Define position and dimensions for the details box
+        details_x = self.rect.x + self.rect.width - 220
+        details_y = self.rect.y + 380  # Position below node list
+        details_width = 200
+        details_height = 180
+
+        # Draw details background
+        pygame.draw.rect(surface, (50, 50, 70, 220),
+                         (details_x, details_y, details_width, details_height))
+        pygame.draw.rect(surface, (100, 100, 150),
+                         (details_x, details_y, details_width, details_height), 1)
+
+        # Draw title
+        title_text = f"Trade Details: {node.name}"
+        title_render = font.render(title_text, True, (220, 220, 255))
+        surface.blit(title_render, (details_x + 10, details_y + 10))
+
+        # Draw horizontal line
+        pygame.draw.line(surface, (100, 100, 150),
+                         (details_x + 5, details_y + 35),
+                         (details_x + details_width - 5, details_y + 35))
+
+        # Current line position for rendering text
+        y_pos = details_y + 45
+
+        # Node total value
+        total_value_text = f"Node Value: {node.trade_value:.1f}"
+        total_render = font.render(total_value_text, True, (255, 255, 255))
+        surface.blit(total_render, (details_x + 10, y_pos))
+        y_pos += 25
+
+        # Player's trade power and share
+        player_power = 0
+        total_power = 0
+        if hasattr(node, 'trade_power'):
+            total_power = sum(node.trade_power.values())
+            player_power = node.trade_power.get(player_nation.id, 0)
+
+        player_share = player_power / total_power if total_power > 0 else 0
+        share_percentage = player_share * 100
+
+        power_text = f"Trade Power: {player_power:.1f}/{total_power:.1f}"
+        power_render = font.render(power_text, True, (255, 255, 255))
+        surface.blit(power_render, (details_x + 10, y_pos))
+        y_pos += 20
+
+        share_text = f"Trade Share: {share_percentage:.1f}%"
+        share_render = font.render(share_text, True, (255, 255, 255))
+        surface.blit(share_render, (details_x + 10, y_pos))
+        y_pos += 25
+
+        # Current player's income from this node
+        player_income = 0
+        if hasattr(node, 'trade_income'):
+            player_income = node.trade_income.get(player_nation.id, 0)
+
+        income_text = f"Monthly Income: {player_income:.2f}"
+        income_render = font.render(income_text, True, (100, 255, 100))
+        surface.blit(income_render, (details_x + 10, y_pos))
+        y_pos += 35
+
+        # Current trade policy
+        current_policy = "None"
+        if hasattr(node, 'trade_policies'):
+            policy = node.trade_policies.get(player_nation.id)
+            if policy:
+                current_policy = policy.capitalize()
+
+        policy_text = f"Current Policy: {current_policy}"
+        policy_render = font.render(policy_text, True, (255, 255, 255))
+        surface.blit(policy_render, (details_x + 10, y_pos))
+
+        # Draw a progress bar for trade share
+        bar_y = y_pos + 30
+        bar_height = 10
+        bar_width = details_width - 20
+
+        # Bar background
+        pygame.draw.rect(surface, (70, 70, 70),
+                         (details_x + 10, bar_y, bar_width, bar_height))
+
+        # Player's share
+        if player_share > 0:
+            fill_width = int(bar_width * player_share)
+            pygame.draw.rect(surface, (100, 200, 255),
+                             (details_x + 10, bar_y, fill_width, bar_height))
+
+        # Border
+        pygame.draw.rect(surface, (150, 150, 150),
+                         (details_x + 10, bar_y, bar_width, bar_height), 1)
+
+    def _render_income_history_chart(self, surface, font):
+        """Render a small chart showing historical trade income"""
+        if self.selected_trade_node is None or not hasattr(self, 'trade_income_history'):
+            return
+
+        # Check if we have history data for this node
+        history = self.trade_income_history.get(self.selected_trade_node, [])
+        if not history:
+            return
+
+        # Chart position and dimensions
+        chart_x = self.rect.x + 20
+        chart_y = self.rect.y + 450  # Position below node details
+        chart_width = self.rect.width - 40
+        chart_height = 80
+
+        # Draw chart background
+        pygame.draw.rect(surface, (40, 40, 60, 220),
+                         (chart_x, chart_y, chart_width, chart_height))
+        pygame.draw.rect(surface, (100, 100, 150),
+                         (chart_x, chart_y, chart_width, chart_height), 1)
+
+        # Draw chart title
+        title_text = "Trade Income History (Last 12 Months)"
+        title_render = font.render(title_text, True, (200, 200, 255))
+        surface.blit(title_render, (chart_x + 10, chart_y + 5))
+
+        # Draw axes
+        axes_color = (150, 150, 150)
+
+        # Draw X-axis
+        pygame.draw.line(surface, axes_color,
+                         (chart_x + 10, chart_y + chart_height - 20),
+                         (chart_x + chart_width - 10, chart_y + chart_height - 20), 1)
+
+        # Draw Y-axis
+        pygame.draw.line(surface, axes_color,
+                         (chart_x + 10, chart_y + 25),
+                         (chart_x + 10, chart_y + chart_height - 20), 1)
+
+        # Calculate scale for Y-axis
+        max_income = max(history) if history else 1
+        if max_income <= 0:
+            max_income = 1  # Avoid division by zero
+
+        # Draw income line
+        if len(history) > 1:
+            # Calculate points
+            points = []
+            data_width = chart_width - 30
+            x_step = data_width / (len(history) - 1)
+            y_scale = (chart_height - 50) / max_income
+
+            for i, income in enumerate(history):
+                x = chart_x + 20 + i * x_step
+                # Invert y-coordinate since pygame origin is top-left
+                y = chart_y + chart_height - 25 - income * y_scale
+                points.append((x, y))
+
+            # Draw the line connecting points
+            if len(points) > 1:
+                pygame.draw.lines(surface, (100, 200, 255), False, points, 2)
+
+            # Draw points
+            for point in points:
+                pygame.draw.circle(surface, (255, 255, 255), point, 3)
+
+        # Draw Y-axis scale
+        scale_y = chart_y + chart_height - 25
+        pygame.draw.line(surface, axes_color, (chart_x + 8, scale_y), (chart_x + 12, scale_y))
+        zero_label = font.render("0", True, (200, 200, 200))
+        surface.blit(zero_label, (chart_x, scale_y - 7))
+
+        # Draw max value on Y-axis
+        max_y = chart_y + 30
+        pygame.draw.line(surface, axes_color, (chart_x + 8, max_y), (chart_x + 12, max_y))
+        max_label = font.render(f"{max_income:.1f}", True, (200, 200, 200))
+        surface.blit(max_label, (chart_x - 5, max_y - 7))
+
+        # Draw month labels on X-axis (just first, middle, and last)
+        month_labels = []
+        current_month = self.game_state.month
+
+        # Calculate last 12 months for X-axis
+        for i in range(len(history)):
+            month_num = (current_month - len(history) + 1 + i) % 12
+            month_name = self.game_state.MONTHS[month_num][:3]  # First 3 letters
+            month_labels.append(month_name)
+
+        # Draw first, middle and last month
+        if month_labels:
+            # First month
+            first_label = font.render(month_labels[0], True, (200, 200, 200))
+            surface.blit(first_label, (points[0][0] - 10, chart_y + chart_height - 15))
+
+            # Middle month
+            if len(month_labels) > 2:
+                mid_idx = len(month_labels) // 2
+                mid_label = font.render(month_labels[mid_idx], True, (200, 200, 200))
+                surface.blit(mid_label, (points[mid_idx][0] - 10, chart_y + chart_height - 15))
+
+            # Last month
+            last_label = font.render(month_labels[-1], True, (200, 200, 200))
+            surface.blit(last_label, (points[-1][0] - 10, chart_y + chart_height - 15))
 
     def draw(self, surface, font):
         """Draw the trade panel"""
@@ -936,13 +1162,25 @@ class TradePanel(Panel):
 
         super().draw(surface, font)
 
-        # Draw trade goods prices
+        # Draw the trade network visualization first
+        self._render_trade_network(surface, font)
+
+        # Draw trade goods prices below the visualization
         for label in self.trade_good_labels:
             label.draw(surface, font)
 
         # Draw trade node buttons
         for button in self.trade_node_buttons:
             button.draw(surface, font)
+
+        # Draw trade income details if a node is selected
+        if self.selected_trade_node is not None:
+            self._render_trade_income_details(surface, font)
+            self._render_income_history_chart(surface, font)
+
+        # Draw help tooltip if needed
+        if not hasattr(self, 'help_shown') or not self.help_shown:
+            self._render_help_tooltip(surface, font)
 
     def handle_click(self, mouse_pos, mouse_pressed):
         """Handle clicks on the trade panel"""
@@ -953,6 +1191,33 @@ class TradePanel(Panel):
         if self.close_button.check_click(mouse_pos, mouse_pressed):
             self.visible = False
             return True
+
+        if hasattr(self, 'dismiss_help_button') and self.dismiss_help_button.check_click(mouse_pos, mouse_pressed):
+            self.help_shown = True
+            return True
+
+        # Check for clicks on the network visualization
+        if self.network_interaction_area.collidepoint(mouse_pos):
+            # Find which node was clicked by calculating distance to each node
+            for node_id, node in self.game_state.economy.trade_nodes.items():
+                # We need to calculate node positions again (same as in render method)
+                network_area_x = self.rect.x + 20
+                network_area_y = self.rect.y + 80
+                network_area_width = self.rect.width - 40
+
+                node_count = len(self.game_state.economy.trade_nodes)
+                i = list(self.game_state.economy.trade_nodes.keys()).index(node_id)
+
+                x_pos = network_area_x + 40 + (network_area_width - 80) * i / (node_count - 1 if node_count > 1 else 1)
+                y_pos = network_area_y + 140 // 2  # Half of network area height
+
+                # Check if click is near this node (within node radius)
+                distance = ((mouse_pos[0] - x_pos) ** 2 + (mouse_pos[1] - y_pos) ** 2) ** 0.5
+                if distance <= 15:  # Node radius
+                    self.update_trade_node_info(node_id)
+                    return True
+
+            return True  # Consume the click even if no node was selected
 
         # Check node selection buttons
         for button in self.trade_node_buttons:
@@ -974,6 +1239,377 @@ class TradePanel(Panel):
                     return True
 
         return False
+
+    def _render_help_tooltip(self, surface, font):
+        """Render a help tooltip explaining the trade visualization"""
+        # Only display if visualization is new to the player
+        if not hasattr(self, 'help_shown') or not self.help_shown:
+            tooltip_x = self.rect.x + 20
+            tooltip_y = self.rect.y + 230  # Position over the network visualization
+            tooltip_width = self.rect.width - 40
+            tooltip_height = 100
+
+            # Semi-transparent background
+            s = pygame.Surface((tooltip_width, tooltip_height), pygame.SRCALPHA)
+            s.fill((20, 20, 60, 200))
+            surface.blit(s, (tooltip_x, tooltip_y))
+
+            # Border
+            pygame.draw.rect(surface, (150, 150, 200),
+                             (tooltip_x, tooltip_y, tooltip_width, tooltip_height), 1)
+
+            # Help text
+            lines = [
+                "Trade Network Help:",
+                "• Circles represent trade nodes",
+                "• Arrows show flow direction",
+                "• Thicker arrows = more trade value",
+                "• Your trade share shown as gold segment",
+                "• Click nodes to set trade policies"
+            ]
+
+            for i, line in enumerate(lines):
+                text = font.render(line, True, (255, 255, 255))
+                surface.blit(text, (tooltip_x + 10, tooltip_y + 10 + i * 15))
+
+            # Dismiss button
+            self.dismiss_help_button = Button(
+                tooltip_x + tooltip_width - 100,
+                tooltip_y + tooltip_height - 30,
+                90, 20, "Got it!", (80, 80, 120)
+            )
+            self.dismiss_help_button.draw(surface, font)
+
+
+    def _render_trade_network(self, surface, font):
+        """Render an enhanced trade network visualization in the panel"""
+        # Network visualization area dimensions and position
+        network_area_x = self.rect.x + 20
+        network_area_y = self.rect.y + 80
+        network_area_width = self.rect.width - 40
+        network_area_height = 140
+
+        # Draw network area background with a subtle gradient
+        for y in range(network_area_height):
+            # Create a subtle gradient from dark blue to dark purple
+            color_val = 30 + y * 10 // network_area_height
+            pygame.draw.line(
+                surface,
+                (20, 20, 30 + color_val),
+                (network_area_x, network_area_y + y),
+                (network_area_x + network_area_width, network_area_y + y)
+            )
+
+        # Draw border
+        pygame.draw.rect(surface, (70, 70, 100),
+                         (network_area_x, network_area_y, network_area_width, network_area_height), 1)
+
+        # Get trade nodes and network
+        trade_nodes = self.game_state.economy.trade_nodes
+
+        if not trade_nodes:
+            no_nodes_text = font.render("No trade nodes available", True, (200, 200, 200))
+            surface.blit(no_nodes_text,
+                         (network_area_x + (network_area_width - no_nodes_text.get_width()) // 2,
+                          network_area_y + network_area_height // 2 - no_nodes_text.get_height() // 2))
+            return
+
+        # Calculate node positions with a more interesting layout
+        # Use a circular layout for better visualization
+        node_positions = {}
+        node_count = len(trade_nodes)
+        radius = min(network_area_width, network_area_height) * 0.35
+        center_x = network_area_x + network_area_width // 2
+        center_y = network_area_y + network_area_height // 2
+
+        # Calculate player's trade power in each node for color coding
+        player_nation = self.game_state.get_player_nation()
+        player_trade_power = {}
+
+        for node_id, node in trade_nodes.items():
+            if hasattr(node, 'trade_power') and player_nation.id in node.trade_power:
+                total_power = sum(node.trade_power.values()) if node.trade_power else 1
+                player_power = node.trade_power[player_nation.id]
+                player_trade_power[node_id] = player_power / total_power if total_power > 0 else 0
+            else:
+                player_trade_power[node_id] = 0
+
+        # First, check if layout should be circular or flow-based
+        # If there's a clear flow direction, position nodes in layers
+
+        # Find source and sink nodes
+        source_nodes = []
+        sink_nodes = []
+
+        for node_id, node in trade_nodes.items():
+            incoming = 0
+            for other_node in trade_nodes.values():
+                if node_id in other_node.outgoing_connections:
+                    incoming += 1
+
+            if incoming == 0 and node.outgoing_connections:
+                source_nodes.append(node_id)  # No incoming, has outgoing
+            elif not node.outgoing_connections and incoming > 0:
+                sink_nodes.append(node_id)  # Has incoming, no outgoing
+
+        # If we have clear sources and sinks, use a layered layout
+        if source_nodes and sink_nodes:
+            # Do a simple layered layout with sources on left, sinks on right
+            layers = []
+            current_layer = source_nodes.copy()
+            processed_nodes = set(current_layer)
+
+            while current_layer:
+                layers.append(current_layer)
+                next_layer = []
+
+                for node_id in current_layer:
+                    node = trade_nodes[node_id]
+                    for target_id in node.outgoing_connections:
+                        # Only add to next layer if all its sources have been processed
+                        all_sources_processed = True
+                        for other_id, other_node in trade_nodes.items():
+                            if target_id in other_node.outgoing_connections and other_id not in processed_nodes:
+                                all_sources_processed = False
+                                break
+
+                        if target_id not in processed_nodes and all_sources_processed:
+                            next_layer.append(target_id)
+                            processed_nodes.add(target_id)
+
+                current_layer = next_layer
+
+            # Add any remaining nodes to the last layer
+            remaining = [node_id for node_id in trade_nodes if node_id not in processed_nodes]
+            if remaining:
+                layers.append(remaining)
+
+            # Position nodes based on layers
+            layer_width = network_area_width / (len(layers) + 1)
+            for layer_idx, layer in enumerate(layers):
+                layer_x = network_area_x + layer_width * (layer_idx + 1)
+                node_spacing = network_area_height / (len(layer) + 1)
+
+                for node_idx, node_id in enumerate(layer):
+                    node_y = network_area_y + node_spacing * (node_idx + 1)
+                    node_positions[node_id] = (layer_x, node_y)
+        else:
+            # Use circular layout if no clear flow direction
+            for i, node_id in enumerate(trade_nodes.keys()):
+                angle = 2 * 3.14159 * i / node_count
+                x_pos = center_x + radius * math.cos(angle)
+                y_pos = center_y + radius * math.sin(angle)
+                node_positions[node_id] = (x_pos, y_pos)
+
+        # Draw connections between nodes (arrows)
+        for node_id, node in trade_nodes.items():
+            if node_id in node_positions:
+                start_pos = node_positions[node_id]
+
+                # Draw outgoing connections
+                for target_id in node.outgoing_connections:
+                    if target_id in node_positions:
+                        end_pos = node_positions[target_id]
+
+                        # Calculate trade value for this connection
+                        # We should use the actual value flowing along this connection
+                        # For this example, we'll use the node's trade value
+                        trade_value = node.trade_value
+
+                        # Scale thickness between 1-6 pixels based on value
+                        base_thickness = 1
+                        value_factor = max(0, min(5, int(trade_value / 20)))
+                        thickness = base_thickness + value_factor
+
+                        # Calculate control points for curved arrows
+                        # This creates a nice curved path instead of straight lines
+                        dx = end_pos[0] - start_pos[0]
+                        dy = end_pos[1] - start_pos[1]
+                        dist = (dx ** 2 + dy ** 2) ** 0.5
+
+                        # Perpendicular offset for control point
+                        if abs(dx) > abs(dy):
+                            # More horizontal connection
+                            control_offset_y = dist * 0.3
+                            control_offset_x = 0
+                        else:
+                            # More vertical connection
+                            control_offset_x = dist * 0.3
+                            control_offset_y = 0
+
+                        # Control point
+                        control_x = (start_pos[0] + end_pos[0]) / 2 + control_offset_x
+                        control_y = (start_pos[1] + end_pos[1]) / 2 + control_offset_y
+                        control_point = (control_x, control_y)
+
+                        # Draw a curved arrow using quadratic Bezier curve
+                        # We'll approximate the curve with line segments
+                        steps = 20
+                        points = []
+
+                        for t in range(steps + 1):
+                            t_normalized = t / steps
+                            # Quadratic Bezier formula
+                            bx = (1 - t_normalized) ** 2 * start_pos[0] + 2 * (1 - t_normalized) * t_normalized * \
+                                 control_point[0] + t_normalized ** 2 * end_pos[0]
+                            by = (1 - t_normalized) ** 2 * start_pos[1] + 2 * (1 - t_normalized) * t_normalized * \
+                                 control_point[1] + t_normalized ** 2 * end_pos[1]
+                            points.append((bx, by))
+
+                        # Draw the curve segments
+                        for i in range(len(points) - 1):
+                            # Use a gradient color based on the trade value
+                            # From blue (low) to gold (high)
+                            color_factor = min(1.0, trade_value / 100)
+                            r = int(100 + 155 * color_factor)
+                            g = int(180 + 75 * color_factor)
+                            b = max(60, int(255 - 195 * color_factor))
+
+                            pygame.draw.line(surface, (r, g, b), points[i], points[i + 1], thickness)
+
+                        # Draw arrow head
+                        if len(points) >= 2:
+                            # Get the direction at the end of the curve
+                            end_segment = points[-1]
+                            before_end = points[-2]
+
+                            # Direction vector
+                            dir_x = end_segment[0] - before_end[0]
+                            dir_y = end_segment[1] - before_end[1]
+
+                            # Normalize direction
+                            length = (dir_x ** 2 + dir_y ** 2) ** 0.5
+                            if length > 0:
+                                dir_x /= length
+                                dir_y /= length
+
+                                # Arrow tip is slightly before the end
+                                tip_pos = (end_pos[0] - dir_x * 10, end_pos[1] - dir_y * 10)
+
+                                # Calculate perpendicular vector for arrow head
+                                perp_x = -dir_y
+                                perp_y = dir_x
+
+                                # Arrow head points
+                                arrow_size = 8
+                                point1 = (tip_pos[0] + perp_x * arrow_size - dir_x * arrow_size,
+                                          tip_pos[1] + perp_y * arrow_size - dir_y * arrow_size)
+                                point2 = (tip_pos[0] - perp_x * arrow_size - dir_x * arrow_size,
+                                          tip_pos[1] - perp_y * arrow_size - dir_y * arrow_size)
+
+                                # Use same color as the line
+                                pygame.draw.polygon(surface, (r, g, b), [tip_pos, point1, point2])
+
+        # Draw trade value indicators along the connections
+        for node_id, node in trade_nodes.items():
+            if node_id in node_positions:
+                start_pos = node_positions[node_id]
+
+                for target_id in node.outgoing_connections:
+                    if target_id in node_positions:
+                        end_pos = node_positions[target_id]
+
+                        # Trade value label position (middle of connection)
+                        label_x = (start_pos[0] + end_pos[0]) / 2
+                        label_y = (start_pos[1] + end_pos[1]) / 2
+
+                        # Draw value indicator with background
+                        value_text = font.render(f"{node.trade_value:.0f}", True, (255, 255, 255))
+                        text_bg_rect = value_text.get_rect(center=(label_x, label_y))
+                        text_bg_rect.inflate_ip(10, 6)  # Make background slightly larger
+
+                        pygame.draw.rect(surface, (30, 30, 50), text_bg_rect)
+                        pygame.draw.rect(surface, (80, 80, 120), text_bg_rect, 1)
+
+                        surface.blit(value_text, value_text.get_rect(center=(label_x, label_y)))
+
+        # Draw nodes
+        node_radius = 18
+        for node_id, position in node_positions.items():
+            node = trade_nodes[node_id]
+
+            # Determine node color based on player's trade power
+            player_power_pct = player_trade_power.get(node_id, 0)
+
+            # Base color: blue with intensity based on player control
+            r = int(80 + 120 * player_power_pct)
+            g = int(120 + 80 * player_power_pct)
+            b = 200
+            node_color = (r, g, b)
+
+            # Highlight selected node
+            if node_id == self.selected_trade_node:
+                # Draw selection ring
+                pygame.draw.circle(surface, (255, 255, 220), position, node_radius + 4)
+
+            # Draw node circle with gradient fill
+            for radius_offset in range(node_radius, 0, -1):
+                # Create a gradient effect
+                factor = radius_offset / node_radius
+                gradient_r = int(r * factor)
+                gradient_g = int(g * factor)
+                gradient_b = int(b * factor)
+                pygame.draw.circle(surface, (gradient_r, gradient_g, gradient_b), position, radius_offset)
+
+            # Draw border
+            pygame.draw.circle(surface, (200, 200, 220), position, node_radius, 2)
+
+            # Draw player's trade share as pie chart segment in node
+            if player_power_pct > 0:
+                # Draw a pie segment representing player's trade power
+                angle = player_power_pct * 2 * math.pi
+                pie_points = [position]
+
+                # Add points along the arc
+                steps = 20
+                for i in range(steps + 1):
+                    current_angle = i * angle / steps
+                    x = position[0] + node_radius * math.cos(current_angle - math.pi / 2)
+                    y = position[1] + node_radius * math.sin(current_angle - math.pi / 2)
+                    pie_points.append((x, y))
+
+                # Draw the pie segment
+                if len(pie_points) > 2:
+                    pygame.draw.polygon(surface, (240, 200, 100), pie_points)
+
+            # Draw trade policy indicator
+            if hasattr(node, 'trade_policies'):
+                policy = node.trade_policies.get(self.game_state.player_nation_id)
+                if policy:
+                    policy_icon_pos = (position[0], position[1] - node_radius - 10)
+
+                    if policy == "collect":
+                        # Draw collect icon (coin)
+                        pygame.draw.circle(surface, (255, 215, 0), policy_icon_pos, 6)
+                        pygame.draw.circle(surface, (0, 0, 0), policy_icon_pos, 6, 1)
+                    elif policy == "steer":
+                        # Draw steer icon (arrow)
+                        arrow_points = [
+                            (policy_icon_pos[0], policy_icon_pos[1] - 5),
+                            (policy_icon_pos[0] + 5, policy_icon_pos[1]),
+                            (policy_icon_pos[0], policy_icon_pos[1] + 5),
+                            (policy_icon_pos[0] - 5, policy_icon_pos[1])
+                        ]
+                        pygame.draw.polygon(surface, (100, 200, 255), arrow_points)
+                        pygame.draw.polygon(surface, (0, 0, 0), arrow_points, 1)
+
+            # Draw node name with shadow for better readability
+            node_label = font.render(node.name, True, (255, 255, 255))
+            # Draw shadow first
+            shadow_pos = (position[0] - node_label.get_width() // 2 + 1,
+                          position[1] + node_radius + 5 + 1)
+            shadow = font.render(node.name, True, (0, 0, 0))
+            surface.blit(shadow, shadow_pos)
+            # Draw actual text
+            surface.blit(node_label,
+                         (position[0] - node_label.get_width() // 2,
+                          position[1] + node_radius + 5))
+
+            # Draw trade value inside the node
+            value_text = font.render(f"{node.trade_value:.0f}", True, (255, 255, 255))
+            surface.blit(value_text,
+                         (position[0] - value_text.get_width() // 2,
+                          position[1] - value_text.get_height() // 2))
 
     def _set_trade_policy(self, node_id, policy):
         """Set a trade policy for the selected node"""
@@ -1600,6 +2236,21 @@ class UI:
                 self.event_panel.visible = True
             else:
                 self.event_panel.visible = False
+
+        if hasattr(self, 'trade_button'):
+            player_nation = self.game_state.get_player_nation()
+            total_trade_income = 0
+
+            # Calculate total trade income
+            for node in self.game_state.economy.trade_nodes.values():
+                if hasattr(node, 'trade_income') and player_nation.id in node.trade_income:
+                    total_trade_income += node.trade_income[player_nation.id]
+
+            # If trade income is significant, update button text
+            if total_trade_income > 5:
+                self.trade_button.text = f"Trade ({total_trade_income:.1f})"
+            else:
+                self.trade_button.text = "Trade"
 
     def update_event_panel(self, event):
         """Update the event panel with the current event"""
