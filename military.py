@@ -500,7 +500,7 @@ class MilitarySystem:
                         attacker = armies_by_nation[nation1_id][0]
                         defender = armies_by_nation[nation2_id][0]
 
-                        battle = Battle(attacker, defender, province_id)
+                        battle = Battle(attacker, defender, province_id, self.game_state)
                         self.battles.append(battle)
 
                         # Simulate the battle immediately

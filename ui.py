@@ -1912,6 +1912,7 @@ class UI:
                         self.peace_panel.visible = False
                     return
 
+
                 elif self.military_button.check_click(mouse_pos, pygame.mouse.get_pressed()):
                     self.military_panel.visible = not self.military_panel.visible
                     self.military_panel.update_army_list()  # Refresh army list

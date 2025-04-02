@@ -34,7 +34,6 @@ class Game:
 
         # Initialize game components
         self.game_state = GameState()
-        self.military_system = MilitarySystem()
         self.event_system = EventSystem(self.game_state)
         self.ai_manager = AIManager(self.game_state)
         self.military_system = MilitarySystem(self.game_state)  # Pass game_state here
