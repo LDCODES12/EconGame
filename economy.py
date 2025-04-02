@@ -213,28 +213,69 @@ class EconomySystem:
         if not hasattr(node, 'trade_policies'):
             node.trade_policies = {}
 
+        # Store previous policy for comparison
+        old_policy = node.trade_policies.get(nation_id, None)
+
+        # Set new policy
         node.trade_policies[nation_id] = policy
+
+        # Record initial trade power and income for feedback
+        old_power = node.trade_power.get(nation_id, 0)
+        old_income = node.trade_income.get(nation_id, 0)
 
         # Apply effects based on policy
         if policy == "collect":
             # Increase trade power in this node
             if nation_id in node.trade_power:
+                # Reset any previous policy modifiers
+                if old_policy == "steer":
+                    # Remove steering bonus first
+                    for target_node_id in node.outgoing_connections:
+                        if target_node_id in self.trade_nodes:
+                            target_node = self.trade_nodes[target_node_id]
+                            if nation_id in target_node.trade_power:
+                                target_node.trade_power[nation_id] /= 1.1
+
+                # Apply collection modifier
                 node.trade_power[nation_id] *= 1.2
 
-                # Recalculate trade income distribution
-                node.distribute_trade_income({nation_id: self.nations[nation_id]})
+                # Recalculate for this node only
+                total_power = sum(node.trade_power.values())
+                if total_power > 0:
+                    share = node.trade_power[nation_id] / total_power
+                    node.trade_income[nation_id] = node.trade_value * share
 
         elif policy == "steer":
+            # Reset collect modifier if previously collecting
+            if old_policy == "collect" and nation_id in node.trade_power:
+                node.trade_power[nation_id] /= 1.2
+
             # Increase outgoing value to connected nodes
-            if hasattr(node, 'outgoing_connections') and node.outgoing_connections:
-                # For simplicity, just increase trade value in connected nodes
+            if node.outgoing_connections:
                 for target_node_id in node.outgoing_connections:
                     if target_node_id in self.trade_nodes:
                         target_node = self.trade_nodes[target_node_id]
                         if nation_id in target_node.trade_power:
                             target_node.trade_power[nation_id] *= 1.1
 
-        return True
+                            # Recalculate target node trade income
+                            total_power = sum(target_node.trade_power.values())
+                            if total_power > 0:
+                                share = target_node.trade_power[nation_id] / total_power
+                                target_node.trade_income[nation_id] = target_node.trade_value * share
+
+        # Calculate impact for UI feedback
+        new_power = node.trade_power.get(nation_id, 0)
+        new_income = node.trade_income.get(nation_id, 0)
+
+        # Return effect information for UI feedback
+        return {
+            "success": True,
+            "node_name": node.name,
+            "policy": policy,
+            "power_change": new_power - old_power,
+            "income_change": new_income - old_income
+        }
 
     def _process_nation_expenses(self, nation):
         """Process a nation's expenses"""

@@ -977,13 +977,41 @@ class TradePanel(Panel):
 
     def _set_trade_policy(self, node_id, policy):
         """Set a trade policy for the selected node"""
-        # This would connect to the trade system in the economy module
         player_nation = self.game_state.get_player_nation()
 
-        # Example of how this might work (would need to be implemented in Economy)
+        # Check if the method exists before calling it
         if hasattr(self.game_state.economy, 'set_trade_policy'):
-            self.game_state.economy.set_trade_policy(player_nation.id, node_id, policy)
-            return True
+            result = self.game_state.economy.set_trade_policy(player_nation.id, node_id, policy)
+
+            # Handle improved return format
+            if isinstance(result, dict) and result.get("success"):
+                node_name = result.get("node_name", "trade node")
+                policy_name = result.get("policy", policy)
+
+                # Create status message with feedback
+                feedback = f"Trade policy set to {policy_name} in {node_name}"
+
+                # If we have a status_message label, update it
+                if hasattr(self, 'status_message'):
+                    self.status_message.set_text(feedback)
+                else:
+                    # Create a status message label if it doesn't exist
+                    self.status_message = Label(self.rect.x + 20, self.rect.y + self.rect.height - 40, feedback)
+                    self.add_element(self.status_message)
+
+                return True
+            elif result:  # Handle boolean return for backward compatibility
+                if node_id in self.game_state.economy.trade_nodes:
+                    node_name = self.game_state.economy.trade_nodes[node_id].name
+                    feedback = f"Trade policy set to {policy} in {node_name}"
+
+                    if hasattr(self, 'status_message'):
+                        self.status_message.set_text(feedback)
+                    else:
+                        self.status_message = Label(self.rect.x + 20, self.rect.y + self.rect.height - 40, feedback)
+                        self.add_element(self.status_message)
+
+                return True
 
         return False
 
@@ -1553,8 +1581,12 @@ class UI:
             self.update_province_panel()
 
         # Update trade panel if visible
-        if self.trade_panel.visible:
+        if hasattr(self, 'trade_panel') and self.trade_panel.visible:
             self.trade_panel.update_trade_goods_prices()
+
+            # If a node is selected, refresh its info
+            if self.trade_panel.selected_trade_node is not None:
+                self.trade_panel.update_trade_node_info(self.trade_panel.selected_trade_node)
 
         # Update nation panel
         self.update_nation_panel()

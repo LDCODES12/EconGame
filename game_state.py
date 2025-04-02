@@ -65,6 +65,7 @@ class GameState:
 
         self._generate_initial_world()
         self.player_nation_id = list(self.nations.keys())[0]
+        self.economy.game_state = self  # Give economy access to game state
 
     def _generate_initial_world(self):
         """Generate the initial game world with nations, provinces, etc."""
