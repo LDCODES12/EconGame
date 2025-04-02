@@ -176,6 +176,13 @@ class EconomySystem:
                         power = province.development["tax"] + province.development["production"]
                         node.trade_power[province.nation_id] += power
 
+            # Apply trade policy modifiers
+            if hasattr(node, 'trade_policies'):
+                for nation_id, policy in node.trade_policies.items():
+                    if nation_id in node.trade_power:
+                        if policy == "collect":
+                            node.trade_power[nation_id] *= 1.2
+
     def _process_nation_economy(self, nation, provinces):
         """Process a nation's economy (taxes, production, etc.)"""
         # Calculate tax income
@@ -194,6 +201,40 @@ class EconomySystem:
 
         # Process expenses
         self._process_nation_expenses(nation)
+
+    def set_trade_policy(self, nation_id, node_id, policy):
+        """Set a trade policy for a nation in a specific trade node"""
+        if node_id not in self.trade_nodes:
+            return False
+
+        node = self.trade_nodes[node_id]
+
+        # Store the policy in the trade node
+        if not hasattr(node, 'trade_policies'):
+            node.trade_policies = {}
+
+        node.trade_policies[nation_id] = policy
+
+        # Apply effects based on policy
+        if policy == "collect":
+            # Increase trade power in this node
+            if nation_id in node.trade_power:
+                node.trade_power[nation_id] *= 1.2
+
+                # Recalculate trade income distribution
+                node.distribute_trade_income({nation_id: self.nations[nation_id]})
+
+        elif policy == "steer":
+            # Increase outgoing value to connected nodes
+            if hasattr(node, 'outgoing_connections') and node.outgoing_connections:
+                # For simplicity, just increase trade value in connected nodes
+                for target_node_id in node.outgoing_connections:
+                    if target_node_id in self.trade_nodes:
+                        target_node = self.trade_nodes[target_node_id]
+                        if nation_id in target_node.trade_power:
+                            target_node.trade_power[nation_id] *= 1.1
+
+        return True
 
     def _process_nation_expenses(self, nation):
         """Process a nation's expenses"""

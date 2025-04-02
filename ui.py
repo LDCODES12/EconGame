@@ -795,6 +795,199 @@ class MilitaryControlPanel(Panel):
         return False
 
 
+class TradePanel(Panel):
+    """Panel for trade and economy management"""
+
+    def __init__(self, x, y, width, height, game_state):
+        super().__init__(x, y, width, height, (40, 40, 40, 230))
+        self.game_state = game_state
+        self.visible = False
+        self.selected_trade_node = None
+        self.scroll_offset = 0
+
+        # Title
+        self.title_label = Label(x + 20, y + 20, "Trade Network")
+        self.add_element(self.title_label)
+
+        # Close button
+        self.close_button = Button(x + width - 30, y + 10, 20, 20, "X", (150, 20, 20))
+        self.add_element(self.close_button)
+
+        # Trade nodes list and info containers
+        self.trade_node_buttons = []
+        self.trade_good_labels = []
+
+        # Current trade goods prices
+        self.prices_label = Label(x + 20, y + 50, "Trade Goods Prices:")
+        self.add_element(self.prices_label)
+
+        # Create trade goods price list
+        self._create_trade_goods_list()
+
+        # Create trade nodes list
+        self._create_trade_nodes_list()
+
+    def _create_trade_goods_list(self):
+        """Create list of trade goods and their prices"""
+        y_offset = self.rect.y + 80
+
+        for good, data in self.game_state.economy.trade_goods.GOODS.items():
+            current_price = self.game_state.economy.trade_goods.current_prices[good]
+            label = Label(self.rect.x + 20, y_offset,
+                          f"{good.capitalize()}: {current_price:.1f} gold")
+            self.trade_good_labels.append(label)
+            y_offset += 25
+
+    def _create_trade_nodes_list(self):
+        """Create list of trade nodes"""
+        y_offset = self.rect.y + 240
+        self.trade_nodes_title = Label(self.rect.x + 20, y_offset, "Trade Nodes:")
+        self.add_element(self.trade_nodes_title)
+
+        y_offset += 30
+
+        for node_id, node in self.game_state.economy.trade_nodes.items():
+            button = Button(self.rect.x + 20, y_offset, 200, 30, node.name)
+            button.node_id = node_id  # Store node_id in the button
+            self.trade_node_buttons.append(button)
+            y_offset += 40
+
+    def update_trade_goods_prices(self):
+        """Update the trade goods prices display"""
+        for i, (good, data) in enumerate(self.game_state.economy.trade_goods.GOODS.items()):
+            current_price = self.game_state.economy.trade_goods.current_prices[good]
+            self.trade_good_labels[i].set_text(f"{good.capitalize()}: {current_price:.1f} gold")
+
+    def update_trade_node_info(self, node_id):
+        """Update the selected trade node information"""
+        self.selected_trade_node = node_id
+
+        # Clear previous node-specific elements
+        self.elements = [elem for elem in self.elements
+                         if not hasattr(elem, 'is_node_specific') or not elem.is_node_specific]
+
+        if node_id is None:
+            return
+
+        node = self.game_state.economy.trade_nodes[node_id]
+
+        # Add node-specific information
+        y_offset = self.rect.y + 400
+
+        # Node name and value
+        node_title = Label(self.rect.x + 20, y_offset, f"Node: {node.name}")
+        node_title.is_node_specific = True
+        self.add_element(node_title)
+
+        y_offset += 30
+
+        value_label = Label(self.rect.x + 20, y_offset,
+                            f"Trade Value: {node.trade_value:.1f}")
+        value_label.is_node_specific = True
+        self.add_element(value_label)
+
+        y_offset += 30
+
+        # List provinces in this node
+        provinces_label = Label(self.rect.x + 20, y_offset, "Provinces:")
+        provinces_label.is_node_specific = True
+        self.add_element(provinces_label)
+
+        y_offset += 25
+
+        for province_id in node.provinces:
+            if province_id in self.game_state.map.provinces:
+                province = self.game_state.map.provinces[province_id]
+                prov_label = Label(self.rect.x + 40, y_offset, province.name)
+                prov_label.is_node_specific = True
+                self.add_element(prov_label)
+                y_offset += 20
+
+        # Add trade policy buttons if player has presence
+        player_nation = self.game_state.get_player_nation()
+        player_has_province = False
+
+        for province_id in node.provinces:
+            province = self.game_state.map.provinces.get(province_id)
+            if province and province.nation_id == player_nation.id:
+                player_has_province = True
+                break
+
+        if player_has_province:
+            y_offset += 20
+
+            # Trade policy buttons
+            steer_button = Button(self.rect.x + 20, y_offset, 150, 30, "Steer Trade")
+            steer_button.node_id = node_id
+            steer_button.is_node_specific = True
+            self.add_element(steer_button)
+
+            y_offset += 40
+
+            collect_button = Button(self.rect.x + 20, y_offset, 150, 30, "Collect Trade")
+            collect_button.node_id = node_id
+            collect_button.is_node_specific = True
+            self.add_element(collect_button)
+
+    def draw(self, surface, font):
+        """Draw the trade panel"""
+        if not self.visible:
+            return
+
+        super().draw(surface, font)
+
+        # Draw trade goods prices
+        for label in self.trade_good_labels:
+            label.draw(surface, font)
+
+        # Draw trade node buttons
+        for button in self.trade_node_buttons:
+            button.draw(surface, font)
+
+    def handle_click(self, mouse_pos, mouse_pressed):
+        """Handle clicks on the trade panel"""
+        if not self.visible:
+            return False
+
+        # Check close button
+        if self.close_button.check_click(mouse_pos, mouse_pressed):
+            self.visible = False
+            return True
+
+        # Check node selection buttons
+        for button in self.trade_node_buttons:
+            if button.check_click(mouse_pos, mouse_pressed):
+                self.update_trade_node_info(button.node_id)
+                return True
+
+        # Check for node-specific buttons
+        for elem in self.elements:
+            if (hasattr(elem, 'is_node_specific') and elem.is_node_specific and
+                    hasattr(elem, 'check_click')):
+                if elem.check_click(mouse_pos, mouse_pressed):
+                    # Handle node-specific actions
+                    if hasattr(elem, 'node_id'):
+                        if "Steer Trade" in elem.text:
+                            return self._set_trade_policy(elem.node_id, "steer")
+                        elif "Collect Trade" in elem.text:
+                            return self._set_trade_policy(elem.node_id, "collect")
+                    return True
+
+        return False
+
+    def _set_trade_policy(self, node_id, policy):
+        """Set a trade policy for the selected node"""
+        # This would connect to the trade system in the economy module
+        player_nation = self.game_state.get_player_nation()
+
+        # Example of how this might work (would need to be implemented in Economy)
+        if hasattr(self.game_state.economy, 'set_trade_policy'):
+            self.game_state.economy.set_trade_policy(player_nation.id, node_id, policy)
+            return True
+
+        return False
+
+
 class UI:
     """Main UI class that manages all UI elements"""
 
@@ -869,6 +1062,10 @@ class UI:
         # Add character button to top bar
         self.character_button = Button(screen_width - 450, 15, 120, 30, "Dynasty")
         self.top_bar.add_element(self.character_button)
+
+        # Add trade button to top bar
+        self.trade_button = Button(screen_width - 300, 15, 120, 30, "Trade")
+        self.top_bar.add_element(self.trade_button)
 
         # Province panel (initially hidden)
         self.province_panel = Panel(20, 80, 300, 400, (40, 40, 40, 230))
@@ -969,6 +1166,11 @@ class UI:
             screen_width - 350, 80, 300, 600, self.game_state
         )
 
+        # Create trade panel
+        self.trade_panel = TradePanel(
+            screen_width - 350, 80, 300, 600, self.game_state
+        )
+
 
         # Peace negotiation panel will be created when needed
         self.peace_panel = None
@@ -994,6 +1196,11 @@ class UI:
         # Check if peace panel is handling the event
         if self.peace_panel and self.peace_panel.visible and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.peace_panel.handle_click(mouse_pos, pygame.mouse.get_pressed()):
+                return
+
+        # Check if trade panel is handling the event
+        if hasattr(self, 'trade_panel') and self.trade_panel.visible and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.trade_panel.handle_click(mouse_pos, pygame.mouse.get_pressed()):
                 return
 
         # If an event popup is active, it blocks other interactions
@@ -1034,6 +1241,9 @@ class UI:
                     self.diplomacy_panel.visible = not self.diplomacy_panel.visible
                     # Hide other panels
                     self.military_panel.visible = False
+                    self.character_panel.visible = False
+                    if hasattr(self, 'trade_panel'):
+                        self.trade_panel.visible = False
                     if self.peace_panel:
                         self.peace_panel.visible = False
                     return
@@ -1043,6 +1253,9 @@ class UI:
                     self.military_panel.update_army_list()  # Refresh army list
                     # Hide other panels
                     self.diplomacy_panel.visible = False
+                    self.character_panel.visible = False
+                    if hasattr(self, 'trade_panel'):
+                        self.trade_panel.visible = False
                     if self.peace_panel:
                         self.peace_panel.visible = False
                     return
@@ -1056,6 +1269,17 @@ class UI:
                     self.military_panel.visible = False
                     if hasattr(self, 'trade_panel'):
                         self.trade_panel.visible = False
+                    if self.peace_panel:
+                        self.peace_panel.visible = False
+                    return
+
+                # Trade button handler
+                elif hasattr(self, 'trade_button') and self.trade_button.check_click(mouse_pos, pygame.mouse.get_pressed()):
+                    self.trade_panel.visible = not self.trade_panel.visible
+                    # Hide other panels
+                    self.diplomacy_panel.visible = False
+                    self.military_panel.visible = False
+                    self.character_panel.visible = False
                     if self.peace_panel:
                         self.peace_panel.visible = False
                     return
@@ -1138,6 +1362,13 @@ class UI:
             self.tech_adm_button.check_hover(mouse_pos)
             self.tech_dip_button.check_hover(mouse_pos)
             self.tech_mil_button.check_hover(mouse_pos)
+
+            if hasattr(self, 'trade_button'):
+                self.trade_button.check_hover(mouse_pos)
+
+            if hasattr(self, 'trade_panel') and self.trade_panel.visible:
+                for button in self.trade_panel.trade_node_buttons:
+                    button.check_hover(mouse_pos)
 
     def handle_map_click(self, mouse_pos, for_selection=False):
         """Handle clicking on the map (modify existing method)"""
@@ -1321,6 +1552,10 @@ class UI:
         if self.province_panel.visible and self.selected_province:
             self.update_province_panel()
 
+        # Update trade panel if visible
+        if self.trade_panel.visible:
+            self.trade_panel.update_trade_goods_prices()
+
         # Update nation panel
         self.update_nation_panel()
 
@@ -1456,6 +1691,10 @@ class UI:
         # Draw character panel if visible
         if self.character_panel.visible:
             self.character_panel.draw(self.screen, self.font_medium)
+
+        # Draw trade panel if visible
+        if self.trade_panel.visible:
+            self.trade_panel.draw(self.screen, self.font_medium)
 
 
         if self.peace_panel and self.peace_panel.visible:
