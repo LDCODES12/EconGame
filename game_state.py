@@ -340,6 +340,12 @@ class GameState:
             if not character.is_alive and character.id in self.nations:
                 self._handle_succession(character.id)
 
+        # Process character births
+        self._process_character_births()
+
+        # Arrange AI marriages
+        self._arrange_ai_marriages()
+
         # Update nation development
         for nation in self.nations.values():
             nation.yearly_development()
@@ -388,6 +394,107 @@ class GameState:
         # Update statistics
         if nation_id == self.player_nation_id:
             self.statistics["successions"] = self.statistics.get("successions", 0) + 1
+
+    def _process_character_births(self):
+        """Process potential births for all characters"""
+        new_children = []  # List to store new children to avoid modifying dict during iteration
+
+        for char_id, character in self.characters.items():
+            # Skip if character can't have children
+            if not character.can_have_children() or not character.spouse_id:
+                continue
+
+            # Get spouse
+            spouse = self.characters.get(character.spouse_id)
+            if not spouse or not spouse.is_alive or not spouse.can_have_children():
+                continue
+
+            # Calculate birth chance (only check female characters to avoid duplicates)
+            if character.gender == "female":
+                birth_chance = character.calculate_birth_chance()
+
+                # Random check for birth
+                if random.random() < birth_chance:
+                    # Create a new child
+                    child = self._create_child(character, spouse)
+                    new_children.append(child)
+
+        # Add all new children to character dictionary
+        for child in new_children:
+            self.characters[child.id] = child
+
+    def _create_child(self, mother, father):
+        """Create a new child for the given parents"""
+        child_id = max(self.characters.keys()) + 1 if self.characters else 0
+
+        # Determine gender
+        child_gender = random.choice(["male", "female"])
+
+        # Use parents dynasty
+        dynasty_name = mother.dynasty_name if mother.dynasty_name else father.dynasty_name
+
+        # Create character name
+        child_first_name = f"Child_{child_id}"  # In a full game, you'd use name lists
+
+        # Create the child character
+        child = Character(child_id, child_first_name, dynasty_name, 0)  # Age 0 for newborns
+        child.gender = child_gender
+
+        # Set parents
+        child.set_parents(father.id, mother.id)
+
+        # Add child to parents
+        mother.add_child(child.id)
+        father.add_child(child.id)
+
+        # Add to dynasty
+        for dynasty_id, dynasty in self.dynasties.items():
+            if dynasty.name == dynasty_name:
+                dynasty.add_member(child_id)
+                break
+
+        print(
+            f"New child born: {child.get_full_name()}, parents: {mother.get_full_name()} and {father.get_full_name()}")
+
+        return child
+
+    def _arrange_ai_marriages(self):
+        """Arrange marriages for AI-controlled characters"""
+        # Get all unmarried adults
+        unmarried_adults = []
+        for char_id, character in self.characters.items():
+            if (character.is_alive and character.age >= 16 and
+                    not character.spouse_id and char_id not in self.nations):  # Skip rulers
+                unmarried_adults.append(character)
+
+        # Male characters to match
+        males = [c for c in unmarried_adults if c.gender == "male"]
+        # Female characters to match
+        females = [c for c in unmarried_adults if c.gender == "female"]
+
+        # Try to arrange some marriages (with some randomness)
+        num_marriages = min(len(males), len(females), random.randint(0, 3))  # 0-3 marriages per year
+
+        for _ in range(num_marriages):
+            if not males or not females:
+                break
+
+            male = random.choice(males)
+            female = random.choice(females)
+
+            # Remove from lists
+            males.remove(male)
+            females.remove(female)
+
+            # Check they're not closely related
+            if set(male.parents).intersection(set(female.parents)):
+                continue  # Skip siblings
+
+            # Create marriage
+            male.marry(female.id)
+            female.marry(male.id)
+
+            print(f"Marriage arranged between {male.get_full_name()} and {female.get_full_name()}")
 
     def get_current_date_string(self):
         """Return the current date as a string"""

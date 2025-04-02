@@ -409,6 +409,182 @@ class PeaceNegotiationPanel(Panel):
         return result
 
 
+class CharacterPanel(Panel):
+    """Panel for character and dynasty information"""
+
+    def __init__(self, x, y, width, height, game_state):
+        super().__init__(x, y, width, height, (40, 40, 40, 230))
+        self.game_state = game_state
+        self.visible = False
+        self.selected_character_id = None
+
+        # Title
+        self.title_label = Label(x + 20, y + 20, "Dynasty & Characters")
+        self.add_element(self.title_label)
+
+        # Close button
+        self.close_button = Button(x + width - 30, y + 10, 20, 20, "X", (150, 20, 20))
+        self.add_element(self.close_button)
+
+        # Character list will be created dynamically
+        self.character_buttons = []
+
+        # Create initial character list
+        self._create_character_list()
+
+    def _create_character_list(self):
+        """Create list of characters in player dynasty"""
+        player_nation = self.game_state.get_player_nation()
+        dynasty_id = player_nation.dynasty_id
+
+        if dynasty_id not in self.game_state.dynasties:
+            return
+
+        dynasty = self.game_state.dynasties[dynasty_id]
+
+        # Dynasty info
+        self.dynasty_label = Label(self.rect.x + 20, self.rect.y + 60,
+                                   f"Dynasty: {dynasty.name}")
+        self.add_element(self.dynasty_label)
+
+        self.prestige_label = Label(self.rect.x + 20, self.rect.y + 85,
+                                    f"Prestige: {dynasty.prestige:.1f}")
+        self.add_element(self.prestige_label)
+
+        # Character list title
+        self.members_label = Label(self.rect.x + 20, self.rect.y + 120,
+                                   "Dynasty Members:")
+        self.add_element(self.members_label)
+
+        # List of characters
+        y_offset = self.rect.y + 150
+
+        # Clear previous buttons
+        self.character_buttons = []
+
+        for member_id in dynasty.members:
+            if member_id in self.game_state.characters:
+                character = self.game_state.characters[member_id]
+
+                if not character.is_alive:
+                    continue  # Skip dead characters
+
+                button = Button(self.rect.x + 20, y_offset, 220, 30,
+                                f"{character.get_full_name()} (Age: {character.age})")
+                button.character_id = member_id
+                self.character_buttons.append(button)
+
+                y_offset += 35
+
+    def update_character_info(self, character_id):
+        """Update the selected character information"""
+        self.selected_character_id = character_id
+
+        # Clear previous character-specific elements
+        self.elements = [elem for elem in self.elements
+                         if not hasattr(elem, 'is_character_specific') or not elem.is_character_specific]
+
+        if character_id is None or character_id not in self.game_state.characters:
+            return
+
+        character = self.game_state.characters[character_id]
+
+        # Character information panel
+        y_offset = self.rect.y + 350
+
+        info_label = Label(self.rect.x + 20, y_offset, f"Character Details: {character.get_full_name()}")
+        info_label.is_character_specific = True
+        self.add_element(info_label)
+
+        y_offset += 30
+
+        # Basic info
+        attrs_label = Label(self.rect.x + 20, y_offset,
+                            f"Attributes: M:{character.martial} D:{character.diplomacy} " +
+                            f"S:{character.stewardship} I:{character.intrigue} L:{character.learning}")
+        attrs_label.is_character_specific = True
+        self.add_element(attrs_label)
+
+        y_offset += 25
+
+        # Traits
+        traits_text = "Traits: " + (", ".join(character.traits) if character.traits else "None")
+        traits_label = Label(self.rect.x + 20, y_offset, traits_text)
+        traits_label.is_character_specific = True
+        self.add_element(traits_label)
+
+        y_offset += 25
+
+        # Family
+        if character.spouse_id and character.spouse_id in self.game_state.characters:
+            spouse = self.game_state.characters[character.spouse_id]
+            spouse_label = Label(self.rect.x + 20, y_offset,
+                                 f"Spouse: {spouse.get_full_name()}")
+            spouse_label.is_character_specific = True
+            self.add_element(spouse_label)
+            y_offset += 25
+
+        # Parents
+        if character.parents:
+            parents_text = "Parents: "
+            for parent_id in character.parents:
+                if parent_id in self.game_state.characters:
+                    parent = self.game_state.characters[parent_id]
+                    parents_text += f"{parent.get_full_name()}, "
+
+            if parents_text != "Parents: ":
+                parents_label = Label(self.rect.x + 20, y_offset, parents_text[:-2])  # Remove last comma
+                parents_label.is_character_specific = True
+                self.add_element(parents_label)
+                y_offset += 25
+
+        # Children
+        if character.children:
+            children_label = Label(self.rect.x + 20, y_offset, "Children:")
+            children_label.is_character_specific = True
+            self.add_element(children_label)
+            y_offset += 25
+
+            for child_id in character.children:
+                if child_id in self.game_state.characters:
+                    child = self.game_state.characters[child_id]
+                    if child.is_alive:
+                        child_label = Label(self.rect.x + 40, y_offset,
+                                            f"{child.get_full_name()} (Age: {child.age})")
+                        child_label.is_character_specific = True
+                        self.add_element(child_label)
+                        y_offset += 20
+
+    def draw(self, surface, font):
+        """Draw the character panel"""
+        if not self.visible:
+            return
+
+        super().draw(surface, font)
+
+        # Draw character buttons
+        for button in self.character_buttons:
+            button.draw(surface, font)
+
+    def handle_click(self, mouse_pos, mouse_pressed):
+        """Handle clicks on the character panel"""
+        if not self.visible:
+            return False
+
+        # Check close button
+        if self.close_button.check_click(mouse_pos, mouse_pressed):
+            self.visible = False
+            return True
+
+        # Check character buttons
+        for button in self.character_buttons:
+            if button.check_click(mouse_pos, mouse_pressed):
+                self.update_character_info(button.character_id)
+                return True
+
+        return False
+
+
 class MilitaryControlPanel(Panel):
     """Panel for military control and conquest operations"""
 
@@ -690,6 +866,10 @@ class UI:
         self.top_bar.add_element(self.diplomacy_button)
         self.top_bar.add_element(self.military_button)
 
+        # Add character button to top bar
+        self.character_button = Button(screen_width - 450, 15, 120, 30, "Dynasty")
+        self.top_bar.add_element(self.character_button)
+
         # Province panel (initially hidden)
         self.province_panel = Panel(20, 80, 300, 400, (40, 40, 40, 230))
         self.province_panel.visible = False
@@ -784,6 +964,12 @@ class UI:
             screen_width - 350, 80, 300, 400, self.game_state
         )
 
+        # Create character panel
+        self.character_panel = CharacterPanel(
+            screen_width - 350, 80, 300, 600, self.game_state
+        )
+
+
         # Peace negotiation panel will be created when needed
         self.peace_panel = None
 
@@ -861,6 +1047,19 @@ class UI:
                         self.peace_panel.visible = False
                     return
 
+                # New character button handler
+                elif self.character_button.check_click(mouse_pos, pygame.mouse.get_pressed()):
+                    self.character_panel.visible = not self.character_panel.visible
+                    self.character_panel._create_character_list()  # Refresh the list
+                    # Hide other panels
+                    self.diplomacy_panel.visible = False
+                    self.military_panel.visible = False
+                    if hasattr(self, 'trade_panel'):
+                        self.trade_panel.visible = False
+                    if self.peace_panel:
+                        self.peace_panel.visible = False
+                    return
+
                 # Check for click on the map
                 elif not self.top_bar.rect.collidepoint(mouse_pos) and not (
                         self.province_panel.visible and self.province_panel.rect.collidepoint(
@@ -883,6 +1082,11 @@ class UI:
 
                 # Check for clicking on nation panel buttons
                 self.handle_nation_panel_clicks(mouse_pos, pygame.mouse.get_pressed())
+
+                # Check if character panel is handling the event
+                if self.character_panel.visible and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    if self.character_panel.handle_click(mouse_pos, pygame.mouse.get_pressed()):
+                        return
 
                 # Start dragging the map
                 if not self.top_bar.rect.collidepoint(mouse_pos) and not (
@@ -1248,6 +1452,11 @@ class UI:
 
         if self.military_panel.visible:
             self.military_panel.draw(self.screen, self.font_medium)
+
+        # Draw character panel if visible
+        if self.character_panel.visible:
+            self.character_panel.draw(self.screen, self.font_medium)
+
 
         if self.peace_panel and self.peace_panel.visible:
             self.peace_panel.draw(self.screen, self.font_medium)

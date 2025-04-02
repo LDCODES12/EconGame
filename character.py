@@ -26,8 +26,8 @@ class Character:
         "infertile": {"martial": 0, "diplomacy": 0, "stewardship": 0, "intrigue": 0, "learning": 0, "fertility": -0.3},
     }
 
-    def __init__(self, character_id, first_name, dynasty_name, age, martial=0, diplomacy=0, stewardship=0,
-                 intrigue=0, learning=0):
+    def __init__(self, character_id, first_name, dynasty_name, age, martial=0, diplomacy=0, stewardship=0, intrigue=0,
+                 learning=0):
         self.id = character_id
         self.first_name = first_name
         self.dynasty_name = dynasty_name
@@ -38,23 +38,20 @@ class Character:
         self.fertility = 0.5 if self.gender == "male" else 0.8  # Base fertility rate (0.0 to 1.0)
 
         # Attributes (1-10 scale)
-        self.martial = martial
-        self.diplomacy = diplomacy
-        self.stewardship = stewardship
-        self.intrigue = intrigue
-        self.learning = learning
-
-        # Generate some random base stats if none provided
-        if martial == 0:
-            self.martial = random.randint(1, 10)
-        if diplomacy == 0:
-            self.diplomacy = random.randint(1, 10)
-        if stewardship == 0:
-            self.stewardship = random.randint(1, 10)
-        if intrigue == 0:
-            self.intrigue = random.randint(1, 10)
-        if learning == 0:
-            self.learning = random.randint(1, 10)
+        # For newborns and children, start with lower attributes that will develop
+        if age < 16:
+            self.martial = martial if martial > 0 else random.randint(1, 3)
+            self.diplomacy = diplomacy if diplomacy > 0 else random.randint(1, 3)
+            self.stewardship = stewardship if stewardship > 0 else random.randint(1, 3)
+            self.intrigue = intrigue if intrigue > 0 else random.randint(1, 3)
+            self.learning = learning if learning > 0 else random.randint(1, 3)
+        else:
+            # Adult characters get normal attributes
+            self.martial = martial if martial > 0 else random.randint(1, 10)
+            self.diplomacy = diplomacy if diplomacy > 0 else random.randint(1, 10)
+            self.stewardship = stewardship if stewardship > 0 else random.randint(1, 10)
+            self.intrigue = intrigue if intrigue > 0 else random.randint(1, 10)
+            self.learning = learning if learning > 0 else random.randint(1, 10)
 
         # Relations
         self.spouse_id = None
@@ -64,8 +61,9 @@ class Character:
         # Traits (affect attributes)
         self.traits = []
 
-        # Assign 1-3 random traits
-        self._assign_random_traits(random.randint(1, 3))
+        # If not a newborn, assign some random traits
+        if age > 6:
+            self._assign_random_traits(random.randint(1, 3))
 
     def _assign_random_traits(self, num_traits):
         """Assign random traits to the character"""
@@ -184,6 +182,29 @@ class Character:
         # Age the character
         self.age += 1
 
+        # Child development (improved attributes as they age)
+        if self.age < 16:
+            # Small chance of attribute improvement each year
+            for attr in ["martial", "diplomacy", "stewardship", "intrigue", "learning"]:
+                if random.random() < 0.3:  # 30% chance per attribute
+                    setattr(self, attr, min(10, getattr(self, attr) + 1))
+
+            # Chance to gain a trait at certain ages
+            if self.age == 6 or self.age == 12 or self.age == 16:
+                if random.random() < 0.7:  # 70% chance at these milestone ages
+                    available_traits = [t for t in self.TRAITS.keys() if t not in self.traits]
+                    if available_traits:
+                        new_trait = random.choice(available_traits)
+                        self.traits.append(new_trait)
+                        # Apply trait effects
+                        trait_effects = self.TRAITS[new_trait]
+                        self.martial += trait_effects["martial"]
+                        self.diplomacy += trait_effects["diplomacy"]
+                        self.stewardship += trait_effects["stewardship"]
+                        self.intrigue += trait_effects["intrigue"]
+                        self.learning += trait_effects["learning"]
+                        self.fertility += trait_effects["fertility"]
+
         # Death check (chance increases with age)
         death_chance = 0.01  # Base 1% chance
 
@@ -198,6 +219,7 @@ class Character:
 
         if random.random() < death_chance:
             self.is_alive = False
+            print(f"{self.get_full_name()} has died at age {self.age}")
 
 
 class Dynasty:
