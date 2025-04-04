@@ -7,39 +7,6 @@ from military import UnitType
 import math
 
 
-
-class Button:
-    """A simple button class"""
-
-    def __init__(self, x, y, width, height, text, color=(100, 100, 100), hover_color=(150, 150, 150),
-                 text_color=(255, 255, 255)):
-        self.rect = pygame.Rect(x, y, width, height)
-        self.text = text
-        self.color = color
-        self.hover_color = hover_color
-        self.text_color = text_color
-        self.is_hovered = False
-
-    def draw(self, surface, font):
-        """Draw the button on the screen"""
-        color = self.hover_color if self.is_hovered else self.color
-        pygame.draw.rect(surface, color, self.rect)
-        pygame.draw.rect(surface, (0, 0, 0), self.rect, 2)  # Border
-
-        text_surface = font.render(self.text, True, self.text_color)
-        text_rect = text_surface.get_rect(center=self.rect.center)
-        surface.blit(text_surface, text_rect)
-
-    def check_hover(self, mouse_pos):
-        """Check if the mouse is hovering over the button"""
-        self.is_hovered = self.rect.collidepoint(mouse_pos)
-        return self.is_hovered
-
-    def check_click(self, mouse_pos, mouse_pressed):
-        """Check if the button is clicked"""
-        return self.rect.collidepoint(mouse_pos) and mouse_pressed[0]
-
-
 class Panel:
     """A UI panel with a background"""
 
@@ -62,9 +29,11 @@ class Panel:
         # Draw border
         pygame.draw.rect(surface, (0, 0, 0), self.rect, 2)
 
-        # Draw elements
+        # Draw elements with position relative to panel
         for element in self.elements:
-            if hasattr(element, 'draw'):
+            if hasattr(element, 'draw_relative'):
+                element.draw_relative(surface, font, self.rect.x, self.rect.y)
+            elif hasattr(element, 'draw'):
                 element.draw(surface, font)
 
     def add_element(self, element):
@@ -82,8 +51,69 @@ class Panel:
         return self.visible
 
 
+class Button:
+    """A simple button class with relative positioning support"""
+
+    def __init__(self, x, y, width, height, text, color=(100, 100, 100), hover_color=(150, 150, 150),
+                 text_color=(255, 255, 255)):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.text = text
+        self.color = color
+        self.hover_color = hover_color
+        self.text_color = text_color
+        self.is_hovered = False
+
+    def draw(self, surface, font):
+        """Draw the button on the screen (absolute positioning)"""
+        color = self.hover_color if self.is_hovered else self.color
+        pygame.draw.rect(surface, color, self.rect)
+        pygame.draw.rect(surface, (0, 0, 0), self.rect, 2)  # Border
+
+        text_surface = font.render(self.text, True, self.text_color)
+        text_rect = text_surface.get_rect(center=self.rect.center)
+        surface.blit(text_surface, text_rect)
+
+    def draw_relative(self, surface, font, parent_x, parent_y):
+        """Draw the button relative to a parent element"""
+        # Create temporary rect at the absolute position
+        abs_rect = pygame.Rect(
+            parent_x + self.rect.x,
+            parent_y + self.rect.y,
+            self.rect.width,
+            self.rect.height
+        )
+
+        color = self.hover_color if self.is_hovered else self.color
+        pygame.draw.rect(surface, color, abs_rect)
+        pygame.draw.rect(surface, (0, 0, 0), abs_rect, 2)  # Border
+
+        text_surface = font.render(self.text, True, self.text_color)
+        text_rect = text_surface.get_rect(center=abs_rect.center)
+        surface.blit(text_surface, text_rect)
+
+    def check_hover(self, mouse_pos):
+        """Check if the mouse is hovering over the button (absolute positioning)"""
+        self.is_hovered = self.rect.collidepoint(mouse_pos)
+        return self.is_hovered
+
+    def check_hover_relative(self, mouse_pos, parent_x, parent_y):
+        """Check hover with coordinates relative to parent"""
+        rel_mouse_pos = (mouse_pos[0] - parent_x, mouse_pos[1] - parent_y)
+        self.is_hovered = self.rect.collidepoint(rel_mouse_pos)
+        return self.is_hovered
+
+    def check_click(self, mouse_pos, mouse_pressed):
+        """Check if the button is clicked (absolute positioning)"""
+        return self.rect.collidepoint(mouse_pos) and mouse_pressed[0]
+
+    def check_click_relative(self, mouse_pos, mouse_pressed, parent_x, parent_y):
+        """Check click with coordinates relative to parent"""
+        rel_mouse_pos = (mouse_pos[0] - parent_x, mouse_pos[1] - parent_y)
+        return self.rect.collidepoint(rel_mouse_pos) and mouse_pressed[0]
+
+
 class Label:
-    """A simple text label"""
+    """A simple text label with relative positioning support"""
 
     def __init__(self, x, y, text, color=(255, 255, 255)):
         self.position = (x, y)
@@ -91,9 +121,15 @@ class Label:
         self.color = color
 
     def draw(self, surface, font):
-        """Draw the label on the screen"""
+        """Draw the label on the screen (absolute positioning)"""
         text_surface = font.render(self.text, True, self.color)
         surface.blit(text_surface, self.position)
+
+    def draw_relative(self, surface, font, parent_x, parent_y):
+        """Draw the label relative to a parent element"""
+        abs_pos = (parent_x + self.position[0], parent_y + self.position[1])
+        text_surface = font.render(self.text, True, self.color)
+        surface.blit(text_surface, abs_pos)
 
     def set_text(self, text):
         """Update the label's text"""
@@ -112,8 +148,8 @@ class DiplomacyPanel(Panel):
         self.scroll_offset = 0
         self.max_displayed_nations = 8
 
-        # Title
-        self.title_label = Label(x + 20, y + 20, "Diplomacy")
+        # Title - use relative positioning (20 pixels from panel left, 20 from top)
+        self.title_label = Label(20, 20, "Diplomacy")
         self.add_element(self.title_label)
 
         # Nation list and action buttons will be created dynamically
@@ -121,8 +157,8 @@ class DiplomacyPanel(Panel):
         self.nation_buttons = []
         self.action_buttons = []
 
-        # Close button
-        self.close_button = Button(x + width - 30, y + 10, 20, 20, "X", (150, 20, 20))
+        # Close button - positioned relative to panel width
+        self.close_button = Button(width - 30, 10, 20, 20, "X", (150, 20, 20))
         self.add_element(self.close_button)
 
         # Create nation list
@@ -131,18 +167,18 @@ class DiplomacyPanel(Panel):
     def _create_nation_list(self):
         """Create the list of nations for diplomacy"""
         player_nation = self.game_state.get_player_nation()
-        y_offset = self.rect.y + 60
+        y_offset = 60  # Starts 60px from panel top
 
         for nation_id, nation in self.game_state.nations.items():
             if nation_id == player_nation.id:
                 continue  # Skip player's own nation
 
-            # Nation name label
-            label = Label(self.rect.x + 20, y_offset, f"{nation.name}")
+            # Nation name label - position relative to panel
+            label = Label(20, y_offset, f"{nation.name}")
             self.nation_labels.append(label)
 
-            # Select button
-            select_button = Button(self.rect.x + 150, y_offset, 80, 25, "Select")
+            # Select button - position relative to panel
+            select_button = Button(150, y_offset, 80, 25, "Select")
             select_button.nation_id = nation_id  # Store nation_id as attribute
             self.nation_buttons.append(select_button)
 
@@ -153,6 +189,7 @@ class DiplomacyPanel(Panel):
         if not self.visible:
             return
 
+        # Draw panel background
         super().draw(surface, font)
 
         # Draw nation list with scrolling
@@ -160,15 +197,43 @@ class DiplomacyPanel(Panel):
         visible_buttons = self.nation_buttons[self.scroll_offset:self.scroll_offset + self.max_displayed_nations]
 
         for label in visible_nations:
-            label.draw(surface, font)
+            # Draw with position relative to panel
+            label_surface = font.render(label.text, True, label.color)
+            surface.blit(label_surface, (self.rect.x + label.position[0], self.rect.y + label.position[1]))
 
         for button in visible_buttons:
-            button.draw(surface, font)
+            # Create a temporary rect for drawing the button at its absolute position
+            abs_rect = pygame.Rect(
+                self.rect.x + button.rect.x,
+                self.rect.y + button.rect.y,
+                button.rect.width,
+                button.rect.height
+            )
+            color = button.hover_color if button.is_hovered else button.color
+            pygame.draw.rect(surface, color, abs_rect)
+            pygame.draw.rect(surface, (0, 0, 0), abs_rect, 2)  # Border
+
+            text_surface = font.render(button.text, True, button.text_color)
+            text_rect = text_surface.get_rect(center=abs_rect.center)
+            surface.blit(text_surface, text_rect)
 
         # Draw action buttons if a nation is selected
         if self.selected_nation_id is not None:
             for button in self.action_buttons:
-                button.draw(surface, font)
+                # Create a temporary rect for drawing the button at its absolute position
+                abs_rect = pygame.Rect(
+                    self.rect.x + button.rect.x,
+                    self.rect.y + button.rect.y,
+                    button.rect.width,
+                    button.rect.height
+                )
+                color = button.hover_color if button.is_hovered else button.color
+                pygame.draw.rect(surface, color, abs_rect)
+                pygame.draw.rect(surface, (0, 0, 0), abs_rect, 2)  # Border
+
+                text_surface = font.render(button.text, True, button.text_color)
+                text_rect = text_surface.get_rect(center=abs_rect.center)
+                surface.blit(text_surface, text_rect)
 
             # Draw relation info
             player_nation = self.game_state.get_player_nation()
@@ -179,11 +244,12 @@ class DiplomacyPanel(Panel):
                 relation_text = f"Relations with {nation.name}: {relation.opinion}"
                 war_status = "At War" if relation.at_war else "At Peace"
 
-                relation_label = Label(self.rect.x + 20, self.rect.y + 250, relation_text)
-                status_label = Label(self.rect.x + 20, self.rect.y + 280, f"Status: {war_status}")
+                # Draw relation labels with positions relative to panel
+                relation_label = font.render(relation_text, True, (255, 255, 255))
+                surface.blit(relation_label, (self.rect.x + 20, self.rect.y + 250))
 
-                relation_label.draw(surface, font)
-                status_label.draw(surface, font)
+                status_label = font.render(f"Status: {war_status}", True, (255, 255, 255))
+                surface.blit(status_label, (self.rect.x + 20, self.rect.y + 280))
 
     def update_selected_nation(self, nation_id):
         """Update selected nation and action buttons"""
@@ -198,44 +264,55 @@ class DiplomacyPanel(Panel):
 
         if relation:
             # Clear previous action buttons
-            y_offset = self.rect.y + 200
+            y_offset = 200  # Position relative to panel top
 
             if not relation.at_war:
-                # Add "Declare War" button
-                declare_war_button = Button(self.rect.x + 20, y_offset, 150, 30, "Declare War", (200, 50, 50))
+                # Add "Declare War" button (relative position)
+                declare_war_button = Button(20, y_offset, 150, 30, "Declare War", (200, 50, 50))
                 declare_war_button.nation_id = nation_id
                 self.action_buttons.append(declare_war_button)
             else:
-                # Add "Negotiate Peace" button
-                peace_button = Button(self.rect.x + 20, y_offset, 150, 30, "Negotiate Peace", (50, 150, 50))
+                # Add "Negotiate Peace" button (relative position)
+                peace_button = Button(20, y_offset, 150, 30, "Negotiate Peace", (50, 150, 50))
                 peace_button.nation_id = nation_id
                 self.action_buttons.append(peace_button)
 
-            # Add "Improve Relations" button
-            improve_button = Button(self.rect.x + 20, y_offset + 40, 150, 30, "Improve Relations")
+            # Add "Improve Relations" button (relative position)
+            improve_button = Button(20, y_offset + 40, 150, 30, "Improve Relations")
             improve_button.nation_id = nation_id
             self.action_buttons.append(improve_button)
 
     def handle_click(self, mouse_pos, mouse_pressed):
-        """Handle clicks on diplomacy panel elements"""
+        """Handle clicks on diplomacy panel elements with relative positioning"""
         if not self.visible:
             return False
 
+        # Convert mouse position to relative position within the panel
+        panel_x = mouse_pos[0] - self.rect.x
+        panel_y = mouse_pos[1] - self.rect.y
+        panel_mouse_pos = (panel_x, panel_y)
+
         # Check close button
-        if self.close_button.check_click(mouse_pos, mouse_pressed):
+        if (0 <= panel_x - self.close_button.rect.x <= self.close_button.rect.width and
+                0 <= panel_y - self.close_button.rect.y <= self.close_button.rect.height and
+                mouse_pressed[0]):
             self.visible = False
             return True
 
         # Check nation select buttons
         visible_buttons = self.nation_buttons[self.scroll_offset:self.scroll_offset + self.max_displayed_nations]
         for button in visible_buttons:
-            if button.check_click(mouse_pos, mouse_pressed):
+            if (0 <= panel_x - button.rect.x <= button.rect.width and
+                    0 <= panel_y - button.rect.y <= button.rect.height and
+                    mouse_pressed[0]):
                 self.update_selected_nation(button.nation_id)
                 return True
 
         # Check action buttons
         for button in self.action_buttons:
-            if button.check_click(mouse_pos, mouse_pressed):
+            if (0 <= panel_x - button.rect.x <= button.rect.width and
+                    0 <= panel_y - button.rect.y <= button.rect.height and
+                    mouse_pressed[0]):
                 if "Declare War" in button.text:
                     return self._handle_declare_war(button.nation_id)
                 elif "Negotiate Peace" in button.text:
@@ -244,6 +321,36 @@ class DiplomacyPanel(Panel):
                     return self._improve_relations(button.nation_id)
 
         return False
+
+    def check_button_hover(self, mouse_pos):
+        """Update hover state for all buttons in this panel"""
+        if not self.visible:
+            return
+
+        # Convert mouse position to panel-relative coordinates
+        panel_x = mouse_pos[0] - self.rect.x
+        panel_y = mouse_pos[1] - self.rect.y
+
+        # Check close button
+        self.close_button.is_hovered = (
+                0 <= panel_x - self.close_button.rect.x <= self.close_button.rect.width and
+                0 <= panel_y - self.close_button.rect.y <= self.close_button.rect.height
+        )
+
+        # Check nation buttons
+        visible_buttons = self.nation_buttons[self.scroll_offset:self.scroll_offset + self.max_displayed_nations]
+        for button in visible_buttons:
+            button.is_hovered = (
+                    0 <= panel_x - button.rect.x <= button.rect.width and
+                    0 <= panel_y - button.rect.y <= button.rect.height
+            )
+
+        # Check action buttons
+        for button in self.action_buttons:
+            button.is_hovered = (
+                    0 <= panel_x - button.rect.x <= button.rect.width and
+                    0 <= panel_y - button.rect.y <= button.rect.height
+            )
 
     def _handle_declare_war(self, target_nation_id):
         """Handle declaring war on another nation"""
@@ -563,23 +670,44 @@ class CharacterPanel(Panel):
 
         super().draw(surface, font)
 
-        # Draw character buttons
+        # Draw character buttons with relative positioning
         for button in self.character_buttons:
-            button.draw(surface, font)
+            abs_rect = pygame.Rect(
+                self.rect.x + button.rect.x,
+                self.rect.y + button.rect.y,
+                button.rect.width,
+                button.rect.height
+            )
+            color = button.hover_color if button.is_hovered else button.color
+            pygame.draw.rect(surface, color, abs_rect)
+            pygame.draw.rect(surface, (0, 0, 0), abs_rect, 2)  # Border
+
+            text_surface = font.render(button.text, True, button.text_color)
+            text_rect = text_surface.get_rect(center=abs_rect.center)
+            surface.blit(text_surface, text_rect)
 
     def handle_click(self, mouse_pos, mouse_pressed):
         """Handle clicks on the character panel"""
         if not self.visible:
             return False
 
+        # Convert mouse position to relative position within the panel
+        panel_x = mouse_pos[0] - self.rect.x
+        panel_y = mouse_pos[1] - self.rect.y
+
         # Check close button
-        if self.close_button.check_click(mouse_pos, mouse_pressed):
-            self.visible = False
-            return True
+        if hasattr(self, 'close_button'):
+            if (0 <= panel_x - self.close_button.rect.x <= self.close_button.rect.width and
+                    0 <= panel_y - self.close_button.rect.y <= self.close_button.rect.height and
+                    mouse_pressed[0]):
+                self.visible = False
+                return True
 
         # Check character buttons
         for button in self.character_buttons:
-            if button.check_click(mouse_pos, mouse_pressed):
+            if (0 <= panel_x - button.rect.x <= button.rect.width and
+                    0 <= panel_y - button.rect.y <= button.rect.height and
+                    mouse_pressed[0]):
                 self.update_character_info(button.character_id)
                 return True
 
@@ -654,19 +782,116 @@ class MilitaryControlPanel(Panel):
 
         super().draw(surface, font)
 
-        # Draw army list
+        # Draw army list with relative positioning
         for label in self.army_labels:
-            label.draw(surface, font)
+            label_surface = font.render(label.text, True, label.color)
+            surface.blit(label_surface, (self.rect.x + label.position[0], self.rect.y + label.position[1]))
 
         for button in self.army_buttons:
-            button.draw(surface, font)
+            # Create a temporary rect for drawing the button at its absolute position
+            abs_rect = pygame.Rect(
+                self.rect.x + button.rect.x,
+                self.rect.y + button.rect.y,
+                button.rect.width,
+                button.rect.height
+            )
+            # Draw the button using the absolute rect
+            color = button.hover_color if button.is_hovered else button.color
+            pygame.draw.rect(surface, color, abs_rect)
+            pygame.draw.rect(surface, (0, 0, 0), abs_rect, 2)  # Border
 
-        # If an army is selected, draw movement controls
+            text_surface = font.render(button.text, True, button.text_color)
+            text_rect = text_surface.get_rect(center=abs_rect.center)
+            surface.blit(text_surface, text_rect)
+
+        # If an army is selected, draw movement controls with relative positioning
         if self.selected_army_id is not None:
-            self.move_button.draw(surface, font)
-            self.attack_button.draw(surface, font)
-            self.instruction_label.draw(surface, font)
-            self.army_info_label.draw(surface, font)
+            # Draw move button
+            abs_rect = pygame.Rect(
+                self.rect.x + self.move_button.rect.x,
+                self.rect.y + self.move_button.rect.y,
+                self.move_button.rect.width,
+                self.move_button.rect.height
+            )
+            color = self.move_button.hover_color if self.move_button.is_hovered else self.move_button.color
+            pygame.draw.rect(surface, color, abs_rect)
+            pygame.draw.rect(surface, (0, 0, 0), abs_rect, 2)  # Border
+
+            text_surface = font.render(self.move_button.text, True, self.move_button.text_color)
+            text_rect = text_surface.get_rect(center=abs_rect.center)
+            surface.blit(text_surface, text_rect)
+
+            # Draw attack button
+            abs_rect = pygame.Rect(
+                self.rect.x + self.attack_button.rect.x,
+                self.rect.y + self.attack_button.rect.y,
+                self.attack_button.rect.width,
+                self.attack_button.rect.height
+            )
+            color = self.attack_button.hover_color if self.attack_button.is_hovered else self.attack_button.color
+            pygame.draw.rect(surface, color, abs_rect)
+            pygame.draw.rect(surface, (0, 0, 0), abs_rect, 2)  # Border
+
+            text_surface = font.render(self.attack_button.text, True, self.attack_button.text_color)
+            text_rect = text_surface.get_rect(center=abs_rect.center)
+            surface.blit(text_surface, text_rect)
+
+            # Draw instruction label
+            instruction_surface = font.render(self.instruction_label.text, True, self.instruction_label.color)
+            surface.blit(instruction_surface, (self.rect.x + self.instruction_label.position[0],
+                                               self.rect.y + self.instruction_label.position[1]))
+
+            # Draw army info
+            info_surface = font.render(self.army_info_label.text, True, self.army_info_label.color)
+            surface.blit(info_surface, (self.rect.x + self.army_info_label.position[0],
+                                        self.rect.y + self.army_info_label.position[1]))
+
+    def handle_click(self, mouse_pos, mouse_pressed):
+        """Handle clicks on military control panel elements"""
+        if not self.visible:
+            return False
+
+        # Convert mouse position to relative position within the panel
+        panel_x = mouse_pos[0] - self.rect.x
+        panel_y = mouse_pos[1] - self.rect.y
+
+        # Check close button if present
+        if hasattr(self, 'close_button'):
+            if (0 <= panel_x - self.close_button.rect.x <= self.close_button.rect.width and
+                    0 <= panel_y - self.close_button.rect.y <= self.close_button.rect.height and
+                    mouse_pressed[0]):
+                self.visible = False
+                return True
+
+        # Check army select buttons
+        for button in self.army_buttons:
+            if (0 <= panel_x - button.rect.x <= button.rect.width and
+                    0 <= panel_y - button.rect.y <= button.rect.height and
+                    mouse_pressed[0]):
+                self.set_selected_army(button.army_id)
+                return True
+
+        # Check movement buttons if army selected
+        if self.selected_army_id is not None:
+            # Move to province button
+            if (0 <= panel_x - self.move_button.rect.x <= self.move_button.rect.width and
+                    0 <= panel_y - self.move_button.rect.y <= self.move_button.rect.height and
+                    mouse_pressed[0]):
+                self.instruction_label.set_text("Click on the map to select move target")
+                self.game_state.waiting_for_province_selection = True
+                self.game_state.province_selection_mode = "move"
+                return True
+
+            # Attack province button
+            if (0 <= panel_x - self.attack_button.rect.x <= self.attack_button.rect.width and
+                    0 <= panel_y - self.attack_button.rect.y <= self.attack_button.rect.height and
+                    mouse_pressed[0]):
+                self.instruction_label.set_text("Click on the map to select attack target")
+                self.game_state.waiting_for_province_selection = True
+                self.game_state.province_selection_mode = "attack"
+                return True
+
+        return False
 
     def set_selected_army(self, army_id):
         """Set the selected army and update info"""
@@ -680,39 +905,6 @@ class MilitaryControlPanel(Panel):
         else:
             self.army_info_label.set_text("")
 
-    def handle_click(self, mouse_pos, mouse_pressed):
-        """Handle clicks on military control panel elements"""
-        if not self.visible:
-            return False
-
-        # Check close button
-        if self.close_button.check_click(mouse_pos, mouse_pressed):
-            self.visible = False
-            return True
-
-        # Check army select buttons
-        for button in self.army_buttons:
-            if button.check_click(mouse_pos, mouse_pressed):
-                self.set_selected_army(button.army_id)
-                return True
-
-        # Check movement buttons if army selected
-        if self.selected_army_id is not None:
-            # Move to province button
-            if self.move_button.check_click(mouse_pos, mouse_pressed):
-                self.instruction_label.set_text("Click on the map to select move target")
-                self.game_state.waiting_for_province_selection = True
-                self.game_state.province_selection_mode = "move"
-                return True
-
-            # Attack province button
-            if self.attack_button.check_click(mouse_pos, mouse_pressed):
-                self.instruction_label.set_text("Click on the map to select attack target")
-                self.game_state.waiting_for_province_selection = True
-                self.game_state.province_selection_mode = "attack"
-                return True
-
-        return False
 
     def handle_province_selection(self, province_id):
         """Handle when a province is selected on the map"""
@@ -840,31 +1032,31 @@ class TradePanel(Panel):
 
     def _create_trade_goods_list(self):
         """Create list of trade goods and their prices"""
-        y_offset = self.rect.y + 80
+        y_offset = 80  # Relative to panel top
 
-        # Title for goods section
-        self.goods_title = Label(self.rect.x + 20, y_offset, "Trade Goods Prices:")
+        # Title for goods section - relative position
+        self.goods_title = Label(20, y_offset, "Trade Goods Prices:")
         self.add_element(self.goods_title)
 
         y_offset += 30
 
         for good, data in self.game_state.economy.trade_goods.GOODS.items():
             current_price = self.game_state.economy.trade_goods.current_prices[good]
-            label = Label(self.rect.x + 20, y_offset,
-                          f"{good.capitalize()}: {current_price:.1f} gold")
+            label = Label(20, y_offset, f"{good.capitalize()}: {current_price:.1f} gold")
             self.trade_good_labels.append(label)
             y_offset += 25
 
     def _create_trade_nodes_list(self):
         """Create list of trade nodes"""
-        y_offset = self.rect.y + 380
-        self.trade_nodes_title = Label(self.rect.x + 20, y_offset, "Trade Nodes:")
+        y_offset = 380  # Relative to panel top
+
+        self.trade_nodes_title = Label(20, y_offset, "Trade Nodes:")
         self.add_element(self.trade_nodes_title)
 
         y_offset += 30
 
         for node_id, node in self.game_state.economy.trade_nodes.items():
-            button = Button(self.rect.x + 20, y_offset, 200, 30, node.name)
+            button = Button(20, y_offset, 200, 30, node.name)
             button.node_id = node_id  # Store node_id in the button
             self.trade_node_buttons.append(button)
             y_offset += 40
@@ -1160,18 +1352,33 @@ class TradePanel(Panel):
         if not self.visible:
             return
 
+        # Draw panel background
         super().draw(surface, font)
 
-        # Draw the trade network visualization first
+        # Draw the trade network visualization with relative positioning
         self._render_trade_network(surface, font)
 
-        # Draw trade goods prices below the visualization
+        # Draw trade goods prices below the visualization with relative positioning
         for label in self.trade_good_labels:
-            label.draw(surface, font)
+            label_surface = font.render(label.text, True, label.color)
+            surface.blit(label_surface, (self.rect.x + label.position[0], self.rect.y + label.position[1]))
 
-        # Draw trade node buttons
+        # Draw trade node buttons with relative positioning
         for button in self.trade_node_buttons:
-            button.draw(surface, font)
+            # Create a temporary rect for drawing at absolute position
+            abs_rect = pygame.Rect(
+                self.rect.x + button.rect.x,
+                self.rect.y + button.rect.y,
+                button.rect.width,
+                button.rect.height
+            )
+            color = button.hover_color if button.is_hovered else button.color
+            pygame.draw.rect(surface, color, abs_rect)
+            pygame.draw.rect(surface, (0, 0, 0), abs_rect, 2)  # Border
+
+            text_surface = font.render(button.text, True, button.text_color)
+            text_rect = text_surface.get_rect(center=abs_rect.center)
+            surface.blit(text_surface, text_rect)
 
         # Draw trade income details if a node is selected
         if self.selected_trade_node is not None:
@@ -1183,26 +1390,45 @@ class TradePanel(Panel):
             self._render_help_tooltip(surface, font)
 
     def handle_click(self, mouse_pos, mouse_pressed):
-        """Handle clicks on the trade panel"""
+        """Handle clicks on the trade panel with relative positioning"""
         if not self.visible:
             return False
 
+        # Convert mouse position to panel-relative coordinates
+        panel_x = mouse_pos[0] - self.rect.x
+        panel_y = mouse_pos[1] - self.rect.y
+
         # Check close button
-        if self.close_button.check_click(mouse_pos, mouse_pressed):
+        if (0 <= panel_x - self.close_button.rect.x <= self.close_button.rect.width and
+                0 <= panel_y - self.close_button.rect.y <= self.close_button.rect.height and
+                mouse_pressed[0]):
             self.visible = False
             return True
 
-        if hasattr(self, 'dismiss_help_button') and self.dismiss_help_button.check_click(mouse_pos, mouse_pressed):
-            self.help_shown = True
-            return True
+        # Check help button if it exists
+        if hasattr(self, 'dismiss_help_button'):
+            help_rect = pygame.Rect(
+                self.dismiss_help_button.rect.x,
+                self.dismiss_help_button.rect.y,
+                self.dismiss_help_button.rect.width,
+                self.dismiss_help_button.rect.height
+            )
+            if help_rect.collidepoint(panel_x, panel_y) and mouse_pressed[0]:
+                self.help_shown = True
+                return True
 
-        # Check for clicks on the network visualization
-        if self.network_interaction_area.collidepoint(mouse_pos):
-            # Find which node was clicked by calculating distance to each node
+        # Check for clicks on the network visualization (using relative coordinates)
+        relative_interaction_area = pygame.Rect(
+            self.network_interaction_area.x,
+            self.network_interaction_area.y,
+            self.network_interaction_area.width,
+            self.network_interaction_area.height
+        )
+        if relative_interaction_area.collidepoint(panel_x, panel_y) and mouse_pressed[0]:
+            # Logic to detect which node was clicked
             for node_id, node in self.game_state.economy.trade_nodes.items():
-                # We need to calculate node positions again (same as in render method)
-                network_area_x = self.rect.x + 20
-                network_area_y = self.rect.y + 80
+                network_area_x = 20  # Relative to panel
+                network_area_y = 80
                 network_area_width = self.rect.width - 40
 
                 node_count = len(self.game_state.economy.trade_nodes)
@@ -1212,7 +1438,7 @@ class TradePanel(Panel):
                 y_pos = network_area_y + 140 // 2  # Half of network area height
 
                 # Check if click is near this node (within node radius)
-                distance = ((mouse_pos[0] - x_pos) ** 2 + (mouse_pos[1] - y_pos) ** 2) ** 0.5
+                distance = ((panel_x - x_pos) ** 2 + (panel_y - y_pos) ** 2) ** 0.5
                 if distance <= 15:  # Node radius
                     self.update_trade_node_info(node_id)
                     return True
@@ -1221,15 +1447,17 @@ class TradePanel(Panel):
 
         # Check node selection buttons
         for button in self.trade_node_buttons:
-            if button.check_click(mouse_pos, mouse_pressed):
+            if (0 <= panel_x - button.rect.x <= button.rect.width and
+                    0 <= panel_y - button.rect.y <= button.rect.height and
+                    mouse_pressed[0]):
                 self.update_trade_node_info(button.node_id)
                 return True
 
         # Check for node-specific buttons
         for elem in self.elements:
             if (hasattr(elem, 'is_node_specific') and elem.is_node_specific and
-                    hasattr(elem, 'check_click')):
-                if elem.check_click(mouse_pos, mouse_pressed):
+                    hasattr(elem, 'check_click_relative')):
+                if elem.check_click_relative(mouse_pos, mouse_pressed, self.rect.x, self.rect.y):
                     # Handle node-specific actions
                     if hasattr(elem, 'node_id'):
                         if "Steer Trade" in elem.text:
@@ -1239,6 +1467,44 @@ class TradePanel(Panel):
                     return True
 
         return False
+
+    def update_button_hover(self, mouse_pos):
+        """Update hover states for all buttons in the panel"""
+        if not self.visible:
+            return
+
+        # Convert to panel-relative coordinates
+        panel_x = mouse_pos[0] - self.rect.x
+        panel_y = mouse_pos[1] - self.rect.y
+
+        # Check close button
+        self.close_button.is_hovered = (
+                0 <= panel_x - self.close_button.rect.x <= self.close_button.rect.width and
+                0 <= panel_y - self.close_button.rect.y <= self.close_button.rect.height
+        )
+
+        # Check trade node buttons
+        for button in self.trade_node_buttons:
+            button.is_hovered = (
+                    0 <= panel_x - button.rect.x <= button.rect.width and
+                    0 <= panel_y - button.rect.y <= button.rect.height
+            )
+
+        # Check help dismiss button if it exists
+        if hasattr(self, 'dismiss_help_button'):
+            self.dismiss_help_button.is_hovered = (
+                    0 <= panel_x - self.dismiss_help_button.rect.x <= self.dismiss_help_button.rect.width and
+                    0 <= panel_y - self.dismiss_help_button.rect.y <= self.dismiss_help_button.rect.height
+            )
+
+        # Check node-specific buttons
+        for elem in self.elements:
+            if hasattr(elem, 'is_node_specific') and hasattr(elem, 'is_hovered'):
+                if hasattr(elem, 'rect'):
+                    elem.is_hovered = (
+                            0 <= panel_x - elem.rect.x <= elem.rect.width and
+                            0 <= panel_y - elem.rect.y <= elem.rect.height
+                    )
 
     def _render_help_tooltip(self, surface, font):
         """Render a help tooltip explaining the trade visualization"""
@@ -1683,6 +1949,8 @@ class UI:
         # Create UI elements
         self.create_ui()
 
+        self.position_panels()
+
     def create_ui(self):
         """Create all UI elements"""
         screen_width, screen_height = self.screen.get_size()
@@ -1718,17 +1986,17 @@ class UI:
 
         # Add new UI elements for war and conquest
         self.diplomacy_button = Button(screen_width - 150, 15, 120, 30, "Diplomacy")
-        self.military_button = Button(screen_width - 300, 15, 120, 30, "Military")
+        self.military_button = Button(screen_width - 280, 15, 120, 30, "Military")
 
         self.top_bar.add_element(self.diplomacy_button)
         self.top_bar.add_element(self.military_button)
 
         # Add character button to top bar
-        self.character_button = Button(screen_width - 450, 15, 120, 30, "Dynasty")
+        self.character_button = Button(screen_width - 410, 15, 120, 30, "Dynasty")
         self.top_bar.add_element(self.character_button)
 
         # Add trade button to top bar
-        self.trade_button = Button(screen_width - 300, 15, 120, 30, "Trade")
+        self.trade_button = Button(screen_width - 540, 15, 120, 30, "Trade")
         self.top_bar.add_element(self.trade_button)
 
         # Province panel (initially hidden)
@@ -1843,6 +2111,71 @@ class UI:
         self.game_state.waiting_for_province_selection = False
         self.game_state.province_selection_mode = None
 
+    def show_panel(self, panel_name):
+        """Show one panel and hide all others"""
+        panels = {
+            "province": self.province_panel,
+            "nation": self.nation_panel,
+            "diplomacy": self.diplomacy_panel,
+            "military": self.military_panel,
+            "character": self.character_panel,
+            "trade": self.trade_panel if hasattr(self, 'trade_panel') else None,
+            "peace": self.peace_panel if hasattr(self, 'peace_panel') else None
+        }
+
+        # Hide all panels except the selected one
+        for name, panel in panels.items():
+            if panel:  # Check if panel exists
+                if name == panel_name:
+                    panel.visible = True
+                elif name != "nation":  # Keep nation panel always visible
+                    panel.visible = False
+
+        # Position panels to avoid overlaps
+        self.position_panels()
+
+    def position_panels(self):
+        """Position all panels to avoid overlaps"""
+        screen_width, screen_height = self.screen.get_size()
+
+        # Define panel positions
+        self.top_bar.rect = pygame.Rect(0, 0, screen_width, 60)
+
+        # Left side panel (province info)
+        self.province_panel.rect = pygame.Rect(20, 80, 300, 400)
+
+        # Right side panel (nation info)
+        self.nation_panel.rect = pygame.Rect(screen_width - 320, 80, 300, 400)
+
+        # Diplomacy panel (center right)
+        self.diplomacy_panel.rect = pygame.Rect(screen_width - 350, 80, 300, 400)
+
+        # Military panel (center)
+        self.military_panel.rect = pygame.Rect(screen_width // 2 - 150, 80, 300, 400)
+
+        # Character panel (left center)
+        self.character_panel.rect = pygame.Rect(50, 80, 300, 600)
+
+        # Trade panel (right center, below nation panel)
+        if hasattr(self, 'trade_panel'):
+            self.trade_panel.rect = pygame.Rect(screen_width - 350, 150, 300, 600)
+
+        # Event panel (center, on top of others)
+        if hasattr(self, 'event_panel'):
+            self.event_panel.rect = pygame.Rect(
+                (screen_width - 600) // 2,
+                (screen_height - 400) // 2,
+                600, 400
+            )
+
+        # Peace panel (center, on top of others)
+        if hasattr(self, 'peace_panel') and self.peace_panel:
+            self.peace_panel.rect = pygame.Rect(
+                (screen_width - 600) // 2,
+                (screen_height - 400) // 2,
+                600, 400
+            )
+
     def handle_event(self, event):
         """Handle input events"""
         mouse_pos = pygame.mouse.get_pos()
@@ -1857,13 +2190,19 @@ class UI:
             if self.military_panel.handle_click(mouse_pos, pygame.mouse.get_pressed()):
                 return
 
+        # Check if character panel is handling the event
+        if self.character_panel.visible and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.character_panel.handle_click(mouse_pos, pygame.mouse.get_pressed()):
+                return
+
         # Check if peace panel is handling the event
         if self.peace_panel and self.peace_panel.visible and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.peace_panel.handle_click(mouse_pos, pygame.mouse.get_pressed()):
                 return
 
         # Check if trade panel is handling the event
-        if hasattr(self, 'trade_panel') and self.trade_panel.visible and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+        if hasattr(self,
+                   'trade_panel') and self.trade_panel.visible and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.trade_panel.handle_click(mouse_pos, pygame.mouse.get_pressed()):
                 return
 
@@ -1872,14 +2211,15 @@ class UI:
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 # Check for clicking on event options
                 for i, button in enumerate(self.event_option_buttons):
-                    if button.check_click(mouse_pos, pygame.mouse.get_pressed()):
+                    if button.check_click_relative(mouse_pos, pygame.mouse.get_pressed(),
+                                                   self.event_panel.rect.x, self.event_panel.rect.y):
                         self.event_system.handle_option(i)
                         return  # Don't process other clicks when handling an event
 
             # Update hover states for event buttons
             elif event.type == pygame.MOUSEMOTION:
                 for button in self.event_option_buttons:
-                    button.check_hover(mouse_pos)
+                    button.check_hover_relative(mouse_pos, self.event_panel.rect.x, self.event_panel.rect.y)
 
             return  # Don't process other interactions while event is active
 
@@ -1900,53 +2240,36 @@ class UI:
                 elif self.speed3_button.check_click(mouse_pos, pygame.mouse.get_pressed()):
                     self.game_state.set_game_speed(3)
 
-                # Handle clicks on diplomacy and military buttons
+                # Handle clicks on panel toggle buttons using the show_panel method
                 elif self.diplomacy_button.check_click(mouse_pos, pygame.mouse.get_pressed()):
-                    self.diplomacy_panel.visible = not self.diplomacy_panel.visible
-                    # Hide other panels
-                    self.military_panel.visible = False
-                    self.character_panel.visible = False
-                    if hasattr(self, 'trade_panel'):
-                        self.trade_panel.visible = False
-                    if self.peace_panel:
-                        self.peace_panel.visible = False
+                    if not self.diplomacy_panel.visible:
+                        self.show_panel("diplomacy")
+                    else:
+                        self.diplomacy_panel.visible = False
                     return
-
 
                 elif self.military_button.check_click(mouse_pos, pygame.mouse.get_pressed()):
-                    self.military_panel.visible = not self.military_panel.visible
-                    self.military_panel.update_army_list()  # Refresh army list
-                    # Hide other panels
-                    self.diplomacy_panel.visible = False
-                    self.character_panel.visible = False
-                    if hasattr(self, 'trade_panel'):
-                        self.trade_panel.visible = False
-                    if self.peace_panel:
-                        self.peace_panel.visible = False
+                    if not self.military_panel.visible:
+                        self.show_panel("military")
+                        self.military_panel.update_army_list()  # Refresh army list
+                    else:
+                        self.military_panel.visible = False
                     return
 
-                # New character button handler
                 elif self.character_button.check_click(mouse_pos, pygame.mouse.get_pressed()):
-                    self.character_panel.visible = not self.character_panel.visible
-                    self.character_panel._create_character_list()  # Refresh the list
-                    # Hide other panels
-                    self.diplomacy_panel.visible = False
-                    self.military_panel.visible = False
-                    if hasattr(self, 'trade_panel'):
-                        self.trade_panel.visible = False
-                    if self.peace_panel:
-                        self.peace_panel.visible = False
+                    if not self.character_panel.visible:
+                        self.show_panel("character")
+                        self.character_panel._create_character_list()  # Refresh the list
+                    else:
+                        self.character_panel.visible = False
                     return
 
-                # Trade button handler
-                elif hasattr(self, 'trade_button') and self.trade_button.check_click(mouse_pos, pygame.mouse.get_pressed()):
-                    self.trade_panel.visible = not self.trade_panel.visible
-                    # Hide other panels
-                    self.diplomacy_panel.visible = False
-                    self.military_panel.visible = False
-                    self.character_panel.visible = False
-                    if self.peace_panel:
-                        self.peace_panel.visible = False
+                elif hasattr(self, 'trade_button') and self.trade_button.check_click(mouse_pos,
+                                                                                     pygame.mouse.get_pressed()):
+                    if not self.trade_panel.visible:
+                        self.show_panel("trade")
+                    else:
+                        self.trade_panel.visible = False
                     return
 
                 # Check for click on the map
@@ -1972,18 +2295,16 @@ class UI:
                 # Check for clicking on nation panel buttons
                 self.handle_nation_panel_clicks(mouse_pos, pygame.mouse.get_pressed())
 
-                # Check if character panel is handling the event
-                if self.character_panel.visible and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    if self.character_panel.handle_click(mouse_pos, pygame.mouse.get_pressed()):
-                        return
-
                 # Start dragging the map
                 if not self.top_bar.rect.collidepoint(mouse_pos) and not (
                         self.province_panel.visible and self.province_panel.rect.collidepoint(
                     mouse_pos)) and not self.nation_panel.rect.collidepoint(mouse_pos) and not (
                         self.event_panel.visible and self.event_panel.rect.collidepoint(mouse_pos)) and not (
                         self.diplomacy_panel.visible and self.diplomacy_panel.rect.collidepoint(mouse_pos)) and not (
-                        self.military_panel.visible and self.military_panel.rect.collidepoint(mouse_pos)):
+                        self.military_panel.visible and self.military_panel.rect.collidepoint(mouse_pos)) and not (
+                        hasattr(self, 'trade_panel') and self.trade_panel.visible and
+                        self.trade_panel.rect.collidepoint(mouse_pos)) and not (
+                        self.character_panel.visible and self.character_panel.rect.collidepoint(mouse_pos)):
                     self.dragging = True
                     self.drag_start = mouse_pos
 
@@ -2008,32 +2329,89 @@ class UI:
                 self.camera_y += dy
                 self.drag_start = mouse_pos
 
-            # Update hover states
+            # Update hover states for top bar buttons (absolute positioning)
             self.pause_button.check_hover(mouse_pos)
             self.speed1_button.check_hover(mouse_pos)
             self.speed2_button.check_hover(mouse_pos)
             self.speed3_button.check_hover(mouse_pos)
             self.diplomacy_button.check_hover(mouse_pos)
             self.military_button.check_hover(mouse_pos)
-
-            if self.province_panel.visible:
-                self.dev_tax_button.check_hover(mouse_pos)
-                self.dev_prod_button.check_hover(mouse_pos)
-                self.dev_man_button.check_hover(mouse_pos)
-
-            self.recruit_inf_button.check_hover(mouse_pos)
-            self.recruit_cav_button.check_hover(mouse_pos)
-            self.recruit_art_button.check_hover(mouse_pos)
-            self.tech_adm_button.check_hover(mouse_pos)
-            self.tech_dip_button.check_hover(mouse_pos)
-            self.tech_mil_button.check_hover(mouse_pos)
-
+            self.character_button.check_hover(mouse_pos)
             if hasattr(self, 'trade_button'):
                 self.trade_button.check_hover(mouse_pos)
 
+            # Update hover states for panel elements (using relative positioning)
+            if self.province_panel.visible:
+                self.dev_tax_button.check_hover_relative(mouse_pos,
+                                                         self.province_panel.rect.x,
+                                                         self.province_panel.rect.y)
+                self.dev_prod_button.check_hover_relative(mouse_pos,
+                                                          self.province_panel.rect.x,
+                                                          self.province_panel.rect.y)
+                self.dev_man_button.check_hover_relative(mouse_pos,
+                                                         self.province_panel.rect.x,
+                                                         self.province_panel.rect.y)
+
+            # Nation panel buttons
+            self.recruit_inf_button.check_hover_relative(mouse_pos,
+                                                         self.nation_panel.rect.x,
+                                                         self.nation_panel.rect.y)
+            self.recruit_cav_button.check_hover_relative(mouse_pos,
+                                                         self.nation_panel.rect.x,
+                                                         self.nation_panel.rect.y)
+            self.recruit_art_button.check_hover_relative(mouse_pos,
+                                                         self.nation_panel.rect.x,
+                                                         self.nation_panel.rect.y)
+            self.tech_adm_button.check_hover_relative(mouse_pos,
+                                                      self.nation_panel.rect.x,
+                                                      self.nation_panel.rect.y)
+            self.tech_dip_button.check_hover_relative(mouse_pos,
+                                                      self.nation_panel.rect.x,
+                                                      self.nation_panel.rect.y)
+            self.tech_mil_button.check_hover_relative(mouse_pos,
+                                                      self.nation_panel.rect.x,
+                                                      self.nation_panel.rect.y)
+
+            # Trade panel buttons
             if hasattr(self, 'trade_panel') and self.trade_panel.visible:
                 for button in self.trade_panel.trade_node_buttons:
-                    button.check_hover(mouse_pos)
+                    button.check_hover_relative(mouse_pos,
+                                                self.trade_panel.rect.x,
+                                                self.trade_panel.rect.y)
+
+            # Diplomacy panel buttons
+            if self.diplomacy_panel.visible:
+                if hasattr(self.diplomacy_panel, 'close_button'):
+                    self.diplomacy_panel.close_button.check_hover_relative(
+                        mouse_pos, self.diplomacy_panel.rect.x, self.diplomacy_panel.rect.y)
+
+                for button in self.diplomacy_panel.nation_buttons:
+                    button.check_hover_relative(
+                        mouse_pos, self.diplomacy_panel.rect.x, self.diplomacy_panel.rect.y)
+
+                for button in self.diplomacy_panel.action_buttons:
+                    button.check_hover_relative(
+                        mouse_pos, self.diplomacy_panel.rect.x, self.diplomacy_panel.rect.y)
+
+            # Military panel buttons
+            if self.military_panel.visible:
+                if hasattr(self.military_panel, 'close_button'):
+                    self.military_panel.close_button.check_hover_relative(
+                        mouse_pos, self.military_panel.rect.x, self.military_panel.rect.y)
+
+                for button in self.military_panel.army_buttons:
+                    button.check_hover_relative(
+                        mouse_pos, self.military_panel.rect.x, self.military_panel.rect.y)
+
+            # Character panel buttons
+            if self.character_panel.visible:
+                if hasattr(self.character_panel, 'close_button'):
+                    self.character_panel.close_button.check_hover_relative(
+                        mouse_pos, self.character_panel.rect.x, self.character_panel.rect.y)
+
+                for button in self.character_panel.character_buttons:
+                    button.check_hover_relative(
+                        mouse_pos, self.character_panel.rect.x, self.character_panel.rect.y)
 
     def handle_map_click(self, mouse_pos, for_selection=False):
         """Handle clicking on the map (modify existing method)"""
